@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Maatram Student Lifecycle Platform — Phase 1
 
-## Getting Started
+Foundation for the "Application to Alumni" platform: schema, auth, and
+role-scoped dashboards. No user-visible form yet (that's Phase 2) — this
+phase proves every later module has a correct, trustworthy base to write to.
 
-First, run the development server:
+## Stack
+
+Next.js 16 (App Router) · TypeScript · Tailwind · PostgreSQL (Docker) ·
+Prisma 6 · NextAuth v5 (Credentials + JWT sessions)
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env        # already done if you're continuing this session
+npm run db:up                # starts Postgres in Docker
+npm run db:migrate           # applies prisma/migrations
+npm run db:seed              # plants a realistic, fully-linked pipeline
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Demo accounts (seeded)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Password for every account: `Passw0rd!`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Email | Role |
+|---|---|
+| `staff@maatram.org` | Staff (full pipeline + at-risk dashboard) |
+| `committee@maatram.org` | Selection committee (interview queue) |
+| `volunteer@maatram.org` | Field volunteer (verification queue) |
+| `mentor1@maatram.org` | Mentor (mentees + check-ins + risk flags) |
+| `applicant1@example.com` … `applicant22@example.com` | Applicants/students/alumni across every lifecycle stage |
 
-## Learn More
+`applicant6@example.com` is mid-pipeline (VERIFIED); `applicant21@example.com`
+and `applicant22@example.com` are ALUMNI with a placement and an active
+Karpom Karpippom tutoring session.
 
-To learn more about Next.js, take a look at the following resources:
+## What's actually built
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Schema** (`prisma/schema.prisma`) — Applicant → Verification →
+  InterviewRecord → Student → Mentor/Certification/AcademicRecord →
+  Placement → AlumniProfile/KarpomSession, with sensitive PII split into its
+  own table from day one.
+- **Auth** — Credentials + JWT sessions, 7 roles, route-gating middleware
+  (`middleware.ts`) that redirects unauthenticated users to `/login` and
+  cross-role access back to the user's own home.
+- **Dashboards**, each scoped server-side by session (never by a client-sent
+  ID): `/applicant`, `/portal` (student/alumni), `/mentor`, `/staff`
+  (staff/committee/volunteer, branches per role).
+- **Seed script** (`prisma/seed.ts`) — 22 applicants distributed across every
+  `ApplicationStatus`, 7 of them promoted to `Student` and spread across
+  `ONBOARDING → ACTIVE (incl. one at-risk) → PLACED → ALUMNI`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Not built yet (Phase 2+)
 
-## Deploy on Vercel
+The public application wizard, file uploads, OTP save-and-resume, interview
+scheduling UI, and real Row-Level Security — see the plan's §8 roadmap.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Useful commands
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run db:studio   # browse the database visually
+npm run db:reset     # wipe and re-migrate + re-seed
+```

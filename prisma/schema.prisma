@@ -1,0 +1,515 @@
+// Student Lifecycle Platform — Phase 1 data model
+// Applicant -> Verification -> InterviewRecord -> (accept) -> Student -> ... -> Alumni
+// Sensitive PII is split into its own table (ApplicantSensitiveInfo) so broad
+// dashboards and operational queries never need to join against it.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  APPLICANT
+  VOLUNTEER
+  COMMITTEE
+  MENTOR
+  STUDENT
+  ALUMNI
+  STAFF
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum FamilySituation {
+  ORPHAN
+  SINGLE_PARENT
+  BOTH_PARENTS
+  GUARDIAN_CARE
+  OTHER
+}
+
+enum HousingCondition {
+  KUTCHA
+  SEMI_PUCCA
+  PUCCA
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  UNDER_VERIFICATION
+  VERIFIED
+  INTERVIEW_SCHEDULED
+  INTERVIEWED
+  SHORTLISTED
+  ACCEPTED
+  REJECTED
+  WAITLISTED
+  WITHDRAWN
+}
+
+enum VerificationDecision {
+  PENDING
+  APPROVED
+  REJECTED
+  NEEDS_FOLLOW_UP
+}
+
+enum InterviewDecision {
+  PENDING
+  SHORTLISTED
+  ACCEPTED
+  REJECTED
+  WAITLISTED
+}
+
+enum CollegeType {
+  AUTONOMOUS_UNIVERSITY
+  ENGINEERING
+  ARTS_SCIENCE
+  MEDICAL
+  PROFESSIONAL
+}
+
+enum StudentStatus {
+  ONBOARDING
+  ACTIVE
+  PLACED
+  ALUMNI
+  WITHDRAWN
+  DROPPED_OUT
+}
+
+enum MentorType {
+  STAFF
+  ALUMNI
+}
+
+enum RiskCategory {
+  ACADEMIC
+  ATTENDANCE
+  FINANCIAL
+  PERSONAL
+  OTHER
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum CertificationStatus {
+  IN_PROGRESS
+  COMPLETED
+  LAPSED
+}
+
+enum DocumentKind {
+  ID_PROOF
+  INCOME_PROOF
+  MARK_SHEET
+  PHOTO
+  CERTIFICATE_PROOF
+  OFFER_LETTER
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Identity & access
+// ──────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?  @unique
+  passwordHash String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // One account can hold exactly one of each profile across its lifetime
+  applicant      Applicant? @relation("ApplicantAccount")
+  studentProfile Student?
+  mentorProfile  Mentor?
+
+  // Operational relations (this user acting on other people's records)
+  volunteerAssignments Applicant[]      @relation("AssignedVolunteer")
+  verificationsDone    Verification[]
+  interviewDecisions   InterviewRecord[] @relation("InterviewDecidedBy")
+  interviewScoresGiven InterviewScore[]
+  mentorLogsResolved   MentorLog[]      @relation("RiskResolvedBy")
+  documentsUploaded    Document[]
+  auditLogEntries      AuditLog[]
+
+  @@index([role])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Stage 1–3: Application, Verification, Interview & Selection
+// ──────────────────────────────────────────────────────────────────────────
+
+model Applicant {
+  id               String   @id @default(cuid())
+  user             User     @relation("ApplicantAccount", fields: [userId], references: [id])
+  userId           String   @unique
+
+  fullName         String
+  dob              DateTime
+  gender           Gender
+  phone            String
+  email            String?
+  district         String
+  boardPercentage  Float
+  courseInterest   String
+  preferredCollege College? @relation(fields: [preferredCollegeId], references: [id])
+  preferredCollegeId String?
+
+  status           ApplicationStatus @default(SUBMITTED)
+
+  volunteer        User?    @relation("AssignedVolunteer", fields: [volunteerId], references: [id])
+  volunteerId      String?
+
+  sensitiveInfo    ApplicantSensitiveInfo?
+  verification     Verification?
+  interview         InterviewRecord?
+  documents        Document[]
+  student           Student?
+  karpomAsJunior   KarpomSession[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status])
+  @@index([district])
+}
+
+// Deliberately isolated from Applicant so operational dashboards (pipeline
+// view, status boards) never need to query identity-sensitive fields.
+model ApplicantSensitiveInfo {
+  id               String   @id @default(cuid())
+  applicant        Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId      String   @unique
+
+  addressLine1     String
+  addressLine2     String?
+  pincode          String
+  guardianName     String
+  guardianPhone    String
+  annualIncomeInr  Int?
+  householdSize    Int?
+  familySituation  FamilySituation
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Verification {
+  id                     String   @id @default(cuid())
+  applicant              Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId            String   @unique
+
+  volunteer              User     @relation(fields: [volunteerId], references: [id])
+  volunteerId            String
+
+  visitDate              DateTime?
+  incomeBandVerified     Boolean  @default(false)
+  housingCondition       HousingCondition?
+  householdSizeConfirmed Int?
+  duplicateCheckPassed   Boolean  @default(true)
+  decision               VerificationDecision @default(PENDING)
+  notes                  String?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([decision])
+}
+
+model InterviewRecord {
+  id             String   @id @default(cuid())
+  applicant      Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId    String   @unique
+
+  scheduledAt    DateTime?
+  location       String?
+  decision       InterviewDecision @default(PENDING)
+  decidedAt      DateTime?
+  decidedBy      User?    @relation("InterviewDecidedBy", fields: [decidedById], references: [id])
+  decidedById    String?
+
+  scores         InterviewScore[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([decision])
+}
+
+model InterviewScore {
+  id                String   @id @default(cuid())
+  interview         InterviewRecord @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  interviewId       String
+  panelist          User     @relation(fields: [panelistId], references: [id])
+  panelistId        String
+
+  academicMerit     Int // 1–10
+  financialNeed     Int // 1–10
+  communication     Int // 1–10
+  intentClarity     Int // 1–10
+  notes             String?
+
+  createdAt         DateTime @default(now())
+
+  @@unique([interviewId, panelistId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Reference data
+// ──────────────────────────────────────────────────────────────────────────
+
+model College {
+  id         String      @id @default(cuid())
+  name       String
+  type       CollegeType
+  district   String
+  isPartner  Boolean     @default(true)
+
+  applicants Applicant[]
+  students   Student[]
+}
+
+model CourseCatalog {
+  id             String   @id @default(cuid())
+  name           String
+  issuer         String
+  category       String?
+
+  certifications Certification[]
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Stage 4–5: Onboarding & Development (the long-lived student record)
+// ──────────────────────────────────────────────────────────────────────────
+
+model Student {
+  id             String   @id @default(cuid())
+  user           User     @relation(fields: [userId], references: [id])
+  userId         String   @unique
+  applicant      Applicant @relation(fields: [applicantId], references: [id])
+  applicantId    String   @unique
+
+  college        College  @relation(fields: [collegeId], references: [id])
+  collegeId      String
+  program        String
+  admissionYear  Int
+  status         StudentStatus @default(ONBOARDING)
+
+  mentor         Mentor?  @relation(fields: [mentorId], references: [id])
+  mentorId       String?
+
+  sponsorship       SponsorshipCoverage?
+  mentorLogs        MentorLog[]
+  certifications    Certification[]
+  academicRecords   AcademicRecord[]
+  placement         Placement?
+  alumniProfile     AlumniProfile?
+  documents         Document[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@index([mentorId])
+}
+
+model SponsorshipCoverage {
+  id                String  @id @default(cuid())
+  student           Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId         String  @unique
+
+  tuitionCovered    Boolean @default(true)
+  hostelCovered     Boolean @default(true)
+  foodCovered       Boolean @default(true)
+  transportCovered  Boolean @default(true)
+  materialsCovered  Boolean @default(true)
+  notes             String?
+}
+
+model Mentor {
+  id          String     @id @default(cuid())
+  user        User       @relation(fields: [userId], references: [id])
+  userId      String     @unique
+
+  type        MentorType
+  specialty   String?
+  district    String?
+  maxLoad     Int        @default(15)
+
+  mentees     Student[]
+  logs        MentorLog[]
+
+  createdAt   DateTime   @default(now())
+}
+
+model MentorLog {
+  id             String       @id @default(cuid())
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId      String
+  mentor         Mentor       @relation(fields: [mentorId], references: [id])
+  mentorId       String
+
+  category       RiskCategory
+  severity       RiskSeverity @default(LOW)
+  note           String
+  isRiskFlag     Boolean      @default(false)
+
+  resolvedAt     DateTime?
+  resolvedBy     User?        @relation("RiskResolvedBy", fields: [resolvedById], references: [id])
+  resolvedById   String?
+
+  createdAt      DateTime     @default(now())
+
+  @@index([studentId])
+  @@index([isRiskFlag])
+}
+
+model Certification {
+  id              String   @id @default(cuid())
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId       String
+  courseCatalog   CourseCatalog? @relation(fields: [courseCatalogId], references: [id])
+  courseCatalogId String?
+
+  name            String
+  issuer          String?
+  status          CertificationStatus @default(IN_PROGRESS)
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  documents       Document[]
+  createdAt       DateTime @default(now())
+}
+
+model AcademicRecord {
+  id                String   @id @default(cuid())
+  student           Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId         String
+
+  semester          Int
+  gpa               Float
+  attendancePercent Float
+  recordedAt        DateTime @default(now())
+
+  @@unique([studentId, semester])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Stage 6: Placement & Alumni
+// ──────────────────────────────────────────────────────────────────────────
+
+model Placement {
+  id                String    @id @default(cuid())
+  student           Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId         String    @unique
+
+  company           String
+  role              String
+  packageInrLakhs   Float?
+  joiningDate       DateTime?
+
+  documents         Document[]
+  createdAt         DateTime  @default(now())
+}
+
+model AlumniProfile {
+  id              String   @id @default(cuid())
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId       String   @unique
+
+  currentRole     String?
+  currentCompany  String?
+  bio             String?
+  mentoringOptIn  Boolean  @default(false)
+  availability    String?
+
+  karpomSessions  KarpomSession[]
+  createdAt       DateTime @default(now())
+}
+
+// Karpom Karpippom: alumni tutor school-age juniors for board exams.
+// The junior is usually outside the platform entirely (a school student),
+// so this is deliberately free-text rather than forced into Applicant.
+model KarpomSession {
+  id              String   @id @default(cuid())
+  alumni          AlumniProfile @relation(fields: [alumniProfileId], references: [id], onDelete: Cascade)
+  alumniProfileId String
+
+  juniorApplicant   Applicant? @relation(fields: [juniorApplicantId], references: [id])
+  juniorApplicantId String?
+  juniorName        String?
+  juniorContact     String?
+
+  subject         String
+  sessionDate     DateTime
+  notes           String?
+
+  createdAt       DateTime @default(now())
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Cross-cutting: documents & audit trail
+// ──────────────────────────────────────────────────────────────────────────
+
+model Document {
+  id              String       @id @default(cuid())
+  kind            DocumentKind
+  storageKey      String // Supabase Storage object path in production
+  fileName        String
+  mimeType        String
+  sizeBytes       Int
+
+  uploadedBy      User   @relation(fields: [uploadedById], references: [id])
+  uploadedById    String
+
+  applicant       Applicant? @relation(fields: [applicantId], references: [id])
+  applicantId     String?
+  student         Student?   @relation(fields: [studentId], references: [id])
+  studentId       String?
+  certification   Certification? @relation(fields: [certificationId], references: [id])
+  certificationId String?
+  placement       Placement? @relation(fields: [placementId], references: [id])
+  placementId     String?
+
+  createdAt       DateTime @default(now())
+}
+
+// Hardened properly in Phase 5 (immutability, full coverage); the table
+// exists from Phase 1 so nothing has to be retrofitted later.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actor      User?    @relation(fields: [actorId], references: [id])
+  actorId    String?
+
+  action     String // e.g. "STATUS_CHANGE", "VIEW_SENSITIVE_INFO"
+  entityType String
+  entityId   String
+  metadata   Json?
+
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+}

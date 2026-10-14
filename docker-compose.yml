@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: maatram_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: maatram
+      POSTGRES_PASSWORD: maatram_dev_password
+      POSTGRES_DB: maatram_student_lifecycle
+    ports:
+      - "5432:5432"
+    volumes:
+      - maatram_pgdata:/var/lib/postgresql/data
+
+volumes:
+  maatram_pgdata:
