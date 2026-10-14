@@ -1,26 +1,275 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* The theme toggle stamps data-theme on <html>; make Tailwind's `dark:`
+ * variant follow that attribute instead of only the OS media query, so a
+ * manual choice always wins. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ──────────────────────────────────────────────────────────────────
+ * Design tokens — "Field Notes": an editorial, casework-inspired
+ * system. Warm paper surfaces, a pine-green brand accent (growth /
+ * change — maatram), bronze as a secondary "milestone" accent for
+ * placements and alumni moments. Fraunces for editorial headings,
+ * Geist Sans for UI, Geist Mono for tabular data.
+ * ────────────────────────────────────────────────────────────────── */
+
+:root {
+  --bg: #f5f3ee;
+  --surface: #ffffff;
+  --surface-sunken: #ece8e0;
+  --surface-sunken-ink: #eef1ee;
+
+  --ink: #1b1d1a;
+  --ink-muted: #5f6158;
+  --ink-faint: #8c8d82;
+
+  --border: #ddd8cc;
+  --border-strong: #c7c1b2;
+
+  --accent: #1f5d4c;
+  --accent-strong: #153f33;
+  --accent-soft: #e1ebe6;
+  --accent-contrast: #f6f4ef;
+
+  --gold: #a1711f;
+  --gold-soft: #f3e6cf;
+
+  --success: #2e7d5b;
+  --success-soft: #e1f0e7;
+  --warning: #ad6a1f;
+  --warning-soft: #f6e8d3;
+  --danger: #a13a3a;
+  --danger-soft: #f6e1e0;
+  --info: #3b6fa0;
+  --info-soft: #e2ecf4;
+
+  --shadow-color: 30 25% 10%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06);
+  --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.12);
+  --shadow-lg: 0 16px 40px -12px hsl(var(--shadow-color) / 0.18);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #14160f;
+    --surface: #1c1f1b;
+    --surface-sunken: #10120e;
+    --surface-sunken-ink: #171a15;
+
+    --ink: #ece9e1;
+    --ink-muted: #a6a79b;
+    --ink-faint: #74766b;
+
+    --border: #2c2f28;
+    --border-strong: #3c4038;
+
+    --accent: #52b091;
+    --accent-strong: #7fcbb0;
+    --accent-soft: #1d2e27;
+    --accent-contrast: #0c120f;
+
+    --gold: #d8a94f;
+    --gold-soft: #332817;
+
+    --success: #52b091;
+    --success-soft: #1a2c24;
+    --warning: #d8a94f;
+    --warning-soft: #332817;
+    --danger: #e08585;
+    --danger-soft: #3a2323;
+    --info: #7fb0e0;
+    --info-soft: #1d2a36;
+
+    --shadow-color: 0 0% 0%;
+    --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.3);
+    --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.45);
+    --shadow-lg: 0 16px 40px -12px hsl(var(--shadow-color) / 0.55);
   }
 }
 
+:root[data-theme="dark"] {
+  --bg: #14160f;
+  --surface: #1c1f1b;
+  --surface-sunken: #10120e;
+  --surface-sunken-ink: #171a15;
+  --ink: #ece9e1;
+  --ink-muted: #a6a79b;
+  --ink-faint: #74766b;
+  --border: #2c2f28;
+  --border-strong: #3c4038;
+  --accent: #52b091;
+  --accent-strong: #7fcbb0;
+  --accent-soft: #1d2e27;
+  --accent-contrast: #0c120f;
+  --gold: #d8a94f;
+  --gold-soft: #332817;
+  --success: #52b091;
+  --success-soft: #1a2c24;
+  --warning: #d8a94f;
+  --warning-soft: #332817;
+  --danger: #e08585;
+  --danger-soft: #3a2323;
+  --info: #7fb0e0;
+  --info-soft: #1d2a36;
+  --shadow-color: 0 0% 0%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.3);
+  --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.45);
+  --shadow-lg: 0 16px 40px -12px hsl(var(--shadow-color) / 0.55);
+}
+
+:root[data-theme="light"] {
+  --bg: #f5f3ee;
+  --surface: #ffffff;
+  --surface-sunken: #ece8e0;
+  --surface-sunken-ink: #eef1ee;
+  --ink: #1b1d1a;
+  --ink-muted: #5f6158;
+  --ink-faint: #8c8d82;
+  --border: #ddd8cc;
+  --border-strong: #c7c1b2;
+  --accent: #1f5d4c;
+  --accent-strong: #153f33;
+  --accent-soft: #e1ebe6;
+  --accent-contrast: #f6f4ef;
+  --gold: #a1711f;
+  --gold-soft: #f3e6cf;
+  --success: #2e7d5b;
+  --success-soft: #e1f0e7;
+  --warning: #ad6a1f;
+  --warning-soft: #f6e8d3;
+  --danger: #a13a3a;
+  --danger-soft: #f6e1e0;
+  --info: #3b6fa0;
+  --info-soft: #e2ecf4;
+  --shadow-color: 30 25% 10%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06);
+  --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.12);
+  --shadow-lg: 0 16px 40px -12px hsl(var(--shadow-color) / 0.18);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-fraunces);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html {
+  color-scheme: light dark;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01";
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* Consistent, highly visible keyboard focus ring across the app */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Thin, warm scrollbars that match the paper surface */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.35s var(--ease-out) both;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--border) 37%, var(--surface-sunken) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.6s ease infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
 }

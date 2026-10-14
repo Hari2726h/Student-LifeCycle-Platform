@@ -1,7 +1,27 @@
+import { ListChecks, AlertTriangle } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { AppShell } from "@/components/app-shell";
-import { StatusPill } from "@/components/status-pill";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/badge";
+import { Card, CardHeader, CardBody } from "@/components/ui/card";
+import { StatStrip } from "@/components/ui/stat-strip";
+import { Table, Thead, Th, Tr, Td, TableScroll } from "@/components/ui/table";
+import { EmptyState } from "@/components/ui/empty-state";
+
+const APPLICANT_STAGE_ORDER = [
+  "SUBMITTED",
+  "UNDER_VERIFICATION",
+  "VERIFIED",
+  "INTERVIEW_SCHEDULED",
+  "INTERVIEWED",
+  "ACCEPTED",
+  "WAITLISTED",
+  "REJECTED",
+  "WITHDRAWN",
+] as const;
+
+const STUDENT_STAGE_ORDER = ["ONBOARDING", "ACTIVE", "PLACED", "ALUMNI", "WITHDRAWN", "DROPPED_OUT"] as const;
 
 export default async function StaffHome() {
   const session = await requireRole(["STAFF", "COMMITTEE", "VOLUNTEER"]);
@@ -11,9 +31,9 @@ export default async function StaffHome() {
     prisma.applicant.groupBy({ by: ["status"], _count: true }),
     prisma.student.groupBy({ by: ["status"], _count: true }),
   ]);
+  const applicantCountMap = Object.fromEntries(applicantCounts.map((c) => [c.status, c._count]));
+  const studentCountMap = Object.fromEntries(studentCounts.map((c) => [c.status, c._count]));
 
-  // Role-scoped querysets — mirrors the permissions table (§4 of the plan):
-  // a volunteer only ever sees applicants assigned to them.
   const volunteerQueue =
     role === "VOLUNTEER"
       ? await prisma.applicant.findMany({
@@ -49,89 +69,95 @@ export default async function StaffHome() {
       : [];
 
   return (
-    <AppShell role={role} name={session.user.name ?? "Staff"} nav={[{ label: "Pipeline", href: "/staff" }]}>
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {applicantCounts.map((c) => (
-          <div key={c.status} className="rounded-xl border border-neutral-200 bg-white p-4">
-            <p className="text-2xl font-semibold text-neutral-900">{c._count}</p>
-            <p className="mt-1 text-xs text-neutral-500">{c.status.replaceAll("_", " ")}</p>
-          </div>
-        ))}
-      </section>
+    <AppShell role={role} name={session.user.name ?? "Staff"} nav={[{ label: "Pipeline", href: "/staff", icon: <ListChecks /> }]}>
+      <PageHeader
+        eyebrow="Operations"
+        title="Pipeline"
+        description="Every applicant and student, from first submission to alumni."
+      />
 
-      <section className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {studentCounts.map((c) => (
-          <div key={c.status} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
-            <p className="text-2xl font-semibold text-emerald-900">{c._count}</p>
-            <p className="mt-1 text-xs text-emerald-700">Students · {c.status}</p>
-          </div>
-        ))}
-      </section>
+      <div className="space-y-2.5">
+        <StatStrip items={APPLICANT_STAGE_ORDER.map((s) => ({ label: s.replaceAll("_", " "), value: applicantCountMap[s] ?? 0 }))} />
+        <StatStrip
+          emphasis="muted"
+          items={STUDENT_STAGE_ORDER.map((s) => ({ label: `Students · ${s.replaceAll("_", " ")}`, value: studentCountMap[s] ?? 0 }))}
+        />
+      </div>
 
       {role === "VOLUNTEER" && (
         <section className="mt-8">
-          <h3 className="text-sm font-semibold text-neutral-900">My verification queue</h3>
-          <Table
-            rows={volunteerQueue}
-            empty="No applicants assigned to you right now."
-            columns={["Name", "District", "Status"]}
-            render={(a) => [a.fullName, a.district, <StatusPill key="s" value={a.status} />]}
-          />
+          <Card>
+            <CardHeader eyebrow="My queue" title="Verification queue" />
+            <PipelineTable
+              rows={volunteerQueue}
+              empty="No applicants assigned to you right now."
+              columns={["Name", "District", "Status"]}
+              render={(a) => [a.fullName, a.district, <StatusBadge key="s" value={a.status} />]}
+            />
+          </Card>
         </section>
       )}
 
       {role === "COMMITTEE" && (
         <section className="mt-8">
-          <h3 className="text-sm font-semibold text-neutral-900">Interview queue</h3>
-          <Table
-            rows={interviewQueue}
-            empty="No applicants awaiting interview decisions."
-            columns={["Name", "District", "Score (avg)", "Status"]}
-            render={(a) => {
-              const scores = a.interview?.scores ?? [];
-              const avg = scores.length
-                ? (
-                    scores.reduce((s, x) => s + x.academicMerit + x.financialNeed + x.communication + x.intentClarity, 0) /
-                    (scores.length * 4)
-                  ).toFixed(1)
-                : "–";
-              return [a.fullName, a.district, avg, <StatusPill key="s" value={a.status} />];
-            }}
-          />
+          <Card>
+            <CardHeader eyebrow="My queue" title="Interview queue" />
+            <PipelineTable
+              rows={interviewQueue}
+              empty="No applicants awaiting interview decisions."
+              columns={["Name", "District", "Score (avg)", "Status"]}
+              render={(a) => {
+                const scores = a.interview?.scores ?? [];
+                const avg = scores.length
+                  ? (
+                      scores.reduce((s, x) => s + x.academicMerit + x.financialNeed + x.communication + x.intentClarity, 0) /
+                      (scores.length * 4)
+                    ).toFixed(1)
+                  : "–";
+                return [a.fullName, a.district, <span key="v" className="font-mono tabular-nums">{avg}</span>, <StatusBadge key="s" value={a.status} />];
+              }}
+            />
+          </Card>
         </section>
       )}
 
       {role === "STAFF" && (
         <>
           <section className="mt-8">
-            <h3 className="text-sm font-semibold text-neutral-900">Full pipeline (latest 25)</h3>
-            <Table
-              rows={fullPipeline}
-              empty="No applicants yet."
-              columns={["Name", "District", "Volunteer", "Status"]}
-              render={(a) => [a.fullName, a.district, a.volunteer?.name ?? "Unassigned", <StatusPill key="s" value={a.status} />]}
-            />
+            <Card>
+              <CardHeader eyebrow="Latest 25" title="Full pipeline" />
+              <PipelineTable
+                rows={fullPipeline}
+                empty="No applicants yet."
+                columns={["Name", "District", "Volunteer", "Status"]}
+                render={(a) => [a.fullName, a.district, a.volunteer?.name ?? "Unassigned", <StatusBadge key="s" value={a.status} />]}
+              />
+            </Card>
           </section>
 
-          <section className="mt-8 rounded-xl border border-rose-200 bg-rose-50 p-5">
-            <h3 className="text-sm font-semibold text-rose-900">
-              At-risk students ({atRiskStudents.length})
-            </h3>
-            <p className="text-xs text-rose-700">
-              Status unresolved risk flags, surfaced across every mentor.
-            </p>
-            {atRiskStudents.length === 0 ? (
-              <p className="mt-3 text-sm text-rose-800">No open risk flags right now.</p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {atRiskStudents.map((s) => (
-                  <li key={s.id} className="text-sm text-rose-900">
-                    <span className="font-medium">{s.user.name}</span> · mentor {s.mentor?.user.name ?? "unassigned"} —{" "}
-                    {s.mentorLogs.map((l) => l.note).join("; ")}
-                  </li>
-                ))}
-              </ul>
-            )}
+          <section className="mt-6">
+            <Card className="border-danger/30 bg-danger-soft/40">
+              <CardHeader
+                eyebrow="Needs attention"
+                title={`At-risk students (${atRiskStudents.length})`}
+                description="Unresolved risk flags, surfaced across every mentor."
+                action={<AlertTriangle className="size-4 text-danger" aria-hidden />}
+              />
+              <CardBody>
+                {atRiskStudents.length === 0 ? (
+                  <p className="text-sm text-ink-muted">No open risk flags right now.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {atRiskStudents.map((s) => (
+                      <li key={s.id} className="text-sm text-ink">
+                        <span className="font-medium">{s.user.name}</span>
+                        <span className="text-ink-muted"> · mentor {s.mentor?.user.name ?? "unassigned"} — {s.mentorLogs.map((l) => l.note).join("; ")}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardBody>
+            </Card>
           </section>
         </>
       )}
@@ -139,7 +165,7 @@ export default async function StaffHome() {
   );
 }
 
-function Table<T>({
+function PipelineTable<T>({
   rows,
   columns,
   render,
@@ -151,30 +177,34 @@ function Table<T>({
   empty: string;
 }) {
   if (rows.length === 0) {
-    return <p className="mt-3 text-sm text-neutral-500">{empty}</p>;
+    return (
+      <div className="p-5 pt-0">
+        <EmptyState icon={ListChecks} title={empty} />
+      </div>
+    );
   }
   return (
-    <table className="mt-3 w-full rounded-xl border border-neutral-200 bg-white text-sm">
-      <thead>
-        <tr className="border-b border-neutral-100 text-left text-xs uppercase text-neutral-400">
-          {columns.map((c) => (
-            <th key={c} className="px-4 py-2">
-              {c}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row, i) => (
-          <tr key={i} className="border-b border-neutral-50 last:border-0">
-            {render(row).map((cell, j) => (
-              <td key={j} className="px-4 py-2 text-neutral-700">
-                {cell}
-              </td>
+    <div className="px-5 pb-5">
+      <TableScroll>
+        <Table>
+          <Thead>
+            <tr>
+              {columns.map((c) => (
+                <Th key={c}>{c}</Th>
+              ))}
+            </tr>
+          </Thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <Tr key={i}>
+                {render(row).map((cell, j) => (
+                  <Td key={j}>{cell}</Td>
+                ))}
+              </Tr>
             ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+          </tbody>
+        </Table>
+      </TableScroll>
+    </div>
   );
 }

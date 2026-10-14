@@ -1,8 +1,14 @@
 import { revalidatePath } from "next/cache";
+import { Users, AlertTriangle } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { AppShell } from "@/components/app-shell";
-import { StatusPill } from "@/components/status-pill";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge, Badge } from "@/components/ui/badge";
+import { Card, CardBody } from "@/components/ui/card";
+import { Avatar } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function MentorHome() {
   const session = await requireRole(["MENTOR"]);
@@ -27,66 +33,83 @@ export default async function MentorHome() {
     <AppShell
       role="MENTOR"
       name={session.user.name ?? "Mentor"}
-      nav={[{ label: "My mentees", href: "/mentor" }]}
+      nav={[{ label: "My mentees", href: "/mentor", icon: <Users /> }]}
     >
-      <h2 className="text-lg font-semibold text-neutral-900">My mentees</h2>
-      <p className="text-sm text-neutral-500">
-        {mentor?.mentees.length ?? 0} of {mentor?.maxLoad ?? "–"} capacity · {mentor?.specialty}
-      </p>
+      <PageHeader
+        eyebrow="Mentorship"
+        title="My mentees"
+        description={mentor ? `${mentor.mentees.length} of ${mentor.maxLoad} capacity · ${mentor.specialty ?? ""}` : undefined}
+      />
 
       {openRiskFlags.length > 0 && (
-        <section className="mt-6 rounded-xl border border-rose-200 bg-rose-50 p-5">
-          <h3 className="text-sm font-semibold text-rose-900">
-            Open risk flags ({openRiskFlags.length})
-          </h3>
-          <ul className="mt-3 space-y-2">
-            {openRiskFlags.map(({ student, log }) => (
-              <li key={log.id} className="text-sm text-rose-900">
-                <span className="font-medium">{student.user.name}</span> — {log.category.toLowerCase()}:{" "}
-                {log.note}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <div className="mt-6 space-y-3">
-        {mentor?.mentees.map((m) => (
-          <div key={m.id} className="rounded-xl border border-neutral-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-neutral-900">{m.user.name}</p>
-                <p className="text-sm text-neutral-500">
-                  {m.program} · {m.college.name}
-                </p>
-              </div>
-              <StatusPill value={m.status} />
-            </div>
-            {m.mentorLogs.length > 0 && (
-              <ul className="mt-3 space-y-1 border-t border-neutral-100 pt-3">
-                {m.mentorLogs.map((log) => (
-                  <li key={log.id} className="flex items-center gap-2 text-xs text-neutral-600">
-                    {log.isRiskFlag && <StatusPill value={log.severity} />}
-                    <span>{log.note}</span>
+        <Card className="mb-6 border-danger/30 bg-danger-soft/50">
+          <CardBody className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-danger">
+                {openRiskFlags.length} open risk {openRiskFlags.length === 1 ? "flag" : "flags"}
+              </p>
+              <ul className="mt-1.5 space-y-1 text-sm text-ink">
+                {openRiskFlags.map(({ student, log }) => (
+                  <li key={log.id}>
+                    <span className="font-medium">{student.user.name}</span>
+                    <span className="text-ink-muted"> — {log.category.toLowerCase()}: {log.note}</span>
                   </li>
                 ))}
               </ul>
-            )}
-            <form action={addCheckIn} className="mt-3 flex gap-2 border-t border-neutral-100 pt-3">
-              <input type="hidden" name="studentId" value={m.id} />
-              <input type="hidden" name="mentorId" value={mentor.id} />
-              <input
-                name="note"
-                placeholder="Add a check-in note…"
-                className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-xs"
-              />
-              <button className="rounded-md bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800">
-                Log
-              </button>
-            </form>
-          </div>
-        ))}
-      </div>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {!mentor || mentor.mentees.length === 0 ? (
+        <EmptyState icon={Users} title="No mentees assigned yet" />
+      ) : (
+        <div className="space-y-4">
+          {mentor.mentees.map((m) => (
+            <Card key={m.id}>
+              <CardBody>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar name={m.user.name} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-ink">{m.user.name}</p>
+                      <p className="truncate text-xs text-ink-faint">
+                        {m.program} · {m.college.name}
+                      </p>
+                    </div>
+                  </div>
+                  <StatusBadge value={m.status} />
+                </div>
+
+                {m.mentorLogs.length > 0 && (
+                  <ul className="mt-3.5 space-y-1.5 border-t border-border pt-3.5">
+                    {m.mentorLogs.map((log) => (
+                      <li key={log.id} className="flex items-start gap-2 text-xs text-ink-muted">
+                        {log.isRiskFlag && <Badge tone={log.severity === "HIGH" ? "danger" : "warning"}>{log.severity}</Badge>}
+                        <span>{log.note}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <form action={addCheckIn} className="mt-3.5 flex gap-2 border-t border-border pt-3.5">
+                  <input type="hidden" name="studentId" value={m.id} />
+                  <input type="hidden" name="mentorId" value={mentor.id} />
+                  <input
+                    name="note"
+                    placeholder="Add a check-in note…"
+                    className="flex-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-faint focus-visible:outline-2 focus-visible:outline-accent"
+                  />
+                  <Button type="submit" variant="primary" size="sm">
+                    Log
+                  </Button>
+                </form>
+              </CardBody>
+            </Card>
+          ))}
+        </div>
+      )}
     </AppShell>
   );
 }

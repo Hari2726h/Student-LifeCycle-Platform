@@ -1,4 +1,16 @@
+import { AlertCircle } from "lucide-react";
+import { BrandMark } from "@/components/brand-mark";
+import { Field } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { loginAction } from "./actions";
+
+const DEMO_ACCOUNTS = [
+  { email: "staff@maatram.org", label: "Staff" },
+  { email: "committee@maatram.org", label: "Committee" },
+  { email: "volunteer@maatram.org", label: "Volunteer" },
+  { email: "mentor1@maatram.org", label: "Mentor" },
+  { email: "applicant6@example.com", label: "Applicant" },
+];
 
 export default async function LoginPage({
   searchParams,
@@ -8,57 +20,53 @@ export default async function LoginPage({
   const params = await searchParams;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
-      <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-8 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-          Maatram Foundation
-        </p>
-        <h1 className="mt-1 text-xl font-semibold text-neutral-900">
-          Student Lifecycle Platform
-        </h1>
-        <p className="mt-1 text-sm text-neutral-500">Sign in to continue</p>
+    <div className="flex min-h-screen items-center justify-center bg-bg px-4 py-12">
+      <div className="w-full max-w-sm animate-fade-up">
+        <div className="flex items-center gap-2.5">
+          <BrandMark className="size-8" />
+          <div>
+            <p className="font-display text-sm font-medium leading-tight text-ink">Maatram</p>
+            <p className="text-[11px] leading-tight text-ink-faint">Student Lifecycle Platform</p>
+          </div>
+        </div>
+
+        <h1 className="mt-7 font-display text-xl font-medium text-ink">Sign in</h1>
+        <p className="mt-1 text-sm text-ink-muted">Continue to your dashboard.</p>
 
         {params.error && (
-          <p className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <div
+            role="alert"
+            className="mt-5 flex items-start gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2.5 text-sm text-danger"
+          >
+            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
             Incorrect email or password. Please try again.
-          </p>
+          </div>
         )}
 
         <form action={loginAction} className="mt-6 space-y-4">
           <input type="hidden" name="callbackUrl" value={params.callbackUrl ?? "/"} />
-          <div>
-            <label className="block text-sm font-medium text-neutral-700">Email</label>
-            <input
-              type="email"
-              name="email"
-              required
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
-              placeholder="you@maatram.org"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-neutral-700">Password</label>
-            <input
-              type="password"
-              name="password"
-              required
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
-              placeholder="••••••••"
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800"
-          >
+          <Field label="Email" type="email" name="email" required placeholder="you@maatram.org" />
+          <Field label="Password" type="password" name="password" required placeholder="••••••••" />
+          <Button type="submit" variant="primary" size="md" className="w-full">
             Sign in
-          </button>
+          </Button>
         </form>
 
-        <div className="mt-6 rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
-          <p className="font-medium text-neutral-600">Demo accounts (seeded)</p>
-          <p>staff@maatram.org · committee@maatram.org · volunteer@maatram.org</p>
-          <p>mentor1@maatram.org · applicant6@example.com</p>
-          <p className="mt-1">Password: <code>Passw0rd!</code></p>
+        <div className="mt-8 rounded-md border border-border bg-surface px-3.5 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-faint">
+            Demo accounts
+          </p>
+          <dl className="mt-2 space-y-1 text-xs">
+            {DEMO_ACCOUNTS.map((a) => (
+              <div key={a.email} className="flex items-center justify-between gap-3">
+                <dt className="text-ink-muted">{a.label}</dt>
+                <dd className="truncate font-mono text-ink">{a.email}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-2 text-xs text-ink-faint">
+            Password for every account: <code className="font-mono text-ink-muted">Passw0rd!</code>
+          </p>
         </div>
       </div>
     </div>
