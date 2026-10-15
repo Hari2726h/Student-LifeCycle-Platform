@@ -7,7 +7,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { SignOutButton } from "@/components/sign-out-button";
 
-export type NavItem = { label: string; href: string; icon: ReactNode };
+export type NavItem = { label: string; href: string; icon: ReactNode; badge?: number };
 
 const ROLE_LABEL: Record<string, string> = {
   APPLICANT: "Applicant",

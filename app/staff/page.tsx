@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { ListChecks, AlertTriangle, UserPlus, CalendarPlus } from "lucide-react";
+import { AlertTriangle, UserPlus, ListChecks } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { DISTRICTS } from "@/lib/constants";
+import { getStaffNav } from "@/lib/staff-nav";
+import { getAtRiskStudents } from "@/lib/retention";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge } from "@/components/ui/badge";
+import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatStrip } from "@/components/ui/stat-strip";
 import { Table, Thead, Th, Tr, Td, TableScroll } from "@/components/ui/table";
@@ -77,27 +79,12 @@ export default async function StaffHome({
         })
       : [];
 
-  const atRiskStudents =
-    role === "STAFF"
-      ? await prisma.student.findMany({
-          where: { mentorLogs: { some: { isRiskFlag: true, resolvedAt: null } } },
-          include: { user: true, mentor: { include: { user: true } }, mentorLogs: { where: { isRiskFlag: true, resolvedAt: null } } },
-        })
-      : [];
+  const atRiskStudents = role === "STAFF" ? await getAtRiskStudents() : [];
+
+  const nav = await getStaffNav(role, session.user.id);
 
   return (
-    <AppShell
-      role={role}
-      name={session.user.name ?? "Staff"}
-      nav={
-        role === "COMMITTEE"
-          ? [
-              { label: "Pipeline", href: "/staff", icon: <ListChecks /> },
-              { label: "Interview slots", href: "/staff/interview-slots", icon: <CalendarPlus /> },
-            ]
-          : [{ label: "Pipeline", href: "/staff", icon: <ListChecks /> }]
-      }
-    >
+    <AppShell role={role} name={session.user.name ?? "Staff"} nav={nav}>
       <PageHeader
         eyebrow="Operations"
         title="Pipeline"
@@ -204,22 +191,37 @@ export default async function StaffHome({
           <section className="mt-6">
             <Card className="border-danger/30 bg-danger-soft/40">
               <CardHeader
-                eyebrow="Needs attention"
+                eyebrow="Needs attention · a worklist, not just a report"
                 title={`At-risk students (${atRiskStudents.length})`}
-                description="Unresolved risk flags, surfaced across every mentor."
+                description="Stalled 90+ days, declining GPA/attendance, or an unresolved mentor risk flag."
                 action={<AlertTriangle className="size-4 text-danger" aria-hidden />}
               />
               <CardBody>
                 {atRiskStudents.length === 0 ? (
-                  <p className="text-sm text-ink-muted">No open risk flags right now.</p>
+                  <p className="text-sm text-ink-muted">Nothing needs attention right now.</p>
                 ) : (
-                  <ul className="space-y-2">
-                    {atRiskStudents.map((s) => (
-                      <li key={s.id} className="text-sm text-ink">
-                        <span className="font-medium">{s.user.name}</span>
-                        <span className="text-ink-muted"> · mentor {s.mentor?.user.name ?? "unassigned"} — {s.mentorLogs.map((l) => l.note).join("; ")}</span>
-                      </li>
-                    ))}
+                  <ul className="space-y-3">
+                    {atRiskStudents.map((s) => {
+                      const openFollowUps = s.followUps.filter((f) => f.status === "OPEN");
+                      return (
+                        <li key={s.id} className="rounded-md border border-border bg-surface p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <Link href={`/staff/students/${s.id}`} className="text-sm font-medium text-accent hover:text-accent-strong">
+                              {s.user.name}
+                            </Link>
+                            <div className="flex flex-wrap gap-1.5">
+                              {s.reasons.includes("RISK_FLAG") && <Badge tone="danger">Risk flag</Badge>}
+                              {s.reasons.includes("DECLINING") && <Badge tone="warning">Declining grades</Badge>}
+                              {s.reasons.includes("STALLED") && <Badge tone="neutral">Stalled 90+ days</Badge>}
+                            </div>
+                          </div>
+                          <p className="mt-1 text-xs text-ink-muted">
+                            Mentor: {s.mentor?.user.name ?? "unassigned"}
+                            {openFollowUps.length > 0 && ` · ${openFollowUps.length} open follow-up${openFollowUps.length > 1 ? "s" : ""}`}
+                          </p>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </CardBody>

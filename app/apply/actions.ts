@@ -70,6 +70,14 @@ export async function saveStep1(formData: FormData) {
   const data = parsed.data;
   const account = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
 
+  // The account was created at OTP time with a placeholder name
+  // ("Applicant 6789") — sync it to the real name now that we have it, so
+  // every later screen (mentor dashboard, staff pipeline, notifications)
+  // shows the right person instead of the placeholder forever.
+  if (account.name !== data.fullName) {
+    await prisma.user.update({ where: { id: user.id }, data: { name: data.fullName } });
+  }
+
   await prisma.applicant.upsert({
     where: { userId: user.id },
     create: {
@@ -244,7 +252,7 @@ export async function createAssistedApplication(formData: FormData) {
 
   const familyUser = await prisma.user.upsert({
     where: { phone: data.phone },
-    update: {},
+    update: { name: data.fullName },
     create: {
       phone: data.phone,
       name: data.fullName,

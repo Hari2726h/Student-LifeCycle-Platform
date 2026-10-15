@@ -1,6 +1,7 @@
-import { CalendarPlus, ListChecks } from "lucide-react";
+import { CalendarPlus } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { getUpcomingSlots } from "@/lib/interview-slots";
+import { getStaffNav } from "@/lib/staff-nav";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
@@ -19,16 +20,10 @@ export default async function InterviewSlotsPage({
   const { error } = await searchParams;
 
   const slots = await getUpcomingSlots();
+  const nav = await getStaffNav("COMMITTEE", session.user.id);
 
   return (
-    <AppShell
-      role="COMMITTEE"
-      name={session.user.name ?? "Committee"}
-      nav={[
-        { label: "Pipeline", href: "/staff", icon: <ListChecks /> },
-        { label: "Interview slots", href: "/staff/interview-slots", icon: <CalendarPlus /> },
-      ]}
-    >
+    <AppShell role="COMMITTEE" name={session.user.name ?? "Committee"} nav={nav}>
       <PageHeader
         eyebrow="Selection"
         title="Interview slots"

@@ -126,6 +126,16 @@ enum DocumentKind {
   OFFER_LETTER
 }
 
+enum NotificationType {
+  RISK_FLAG
+  STALE_CHECK_IN
+}
+
+enum FollowUpStatus {
+  OPEN
+  DONE
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Identity & access
 // ──────────────────────────────────────────────────────────────────────────
@@ -165,6 +175,9 @@ model User {
   mentorLogsResolved   MentorLog[]      @relation("RiskResolvedBy")
   documentsUploaded    Document[]
   auditLogEntries      AuditLog[]
+  notifications        Notification[]
+  followUpsAssigned    FollowUpAction[] @relation("FollowUpAssignee")
+  followUpsCreated     FollowUpAction[] @relation("FollowUpCreatedBy")
 
   @@index([role])
 }
@@ -363,6 +376,8 @@ model Student {
   placement         Placement?
   alumniProfile     AlumniProfile?
   documents         Document[]
+  followUps         FollowUpAction[]
+  notifications     Notification[]
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -548,4 +563,52 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([actorId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 3: the retention engine — turning a risk flag from "data exists"
+// into "someone acts on it".
+// ──────────────────────────────────────────────────────────────────────────
+
+// A real, queryable alert rather than a silent database write. Created for
+// every active staff user when a mentor logs a risk flag (or when a mentee
+// goes stale), and surfaced via an unread badge in the staff shell.
+model Notification {
+  id          String           @id @default(cuid())
+  recipient   User             @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  recipientId String
+
+  type        NotificationType
+  title       String
+  body        String
+
+  student     Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String?
+
+  read        Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  @@index([recipientId, read])
+}
+
+// Makes the at-risk dashboard a worklist instead of a report: staff assign
+// a concrete next action against a flagged student, not just read about it.
+model FollowUpAction {
+  id           String         @id @default(cuid())
+  student      Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId    String
+
+  note         String
+  status       FollowUpStatus @default(OPEN)
+
+  assignedTo   User           @relation("FollowUpAssignee", fields: [assignedToId], references: [id])
+  assignedToId String
+  createdBy    User           @relation("FollowUpCreatedBy", fields: [createdById], references: [id])
+  createdById  String
+
+  createdAt    DateTime       @default(now())
+  resolvedAt   DateTime?
+
+  @@index([studentId, status])
+  @@index([assignedToId, status])
 }

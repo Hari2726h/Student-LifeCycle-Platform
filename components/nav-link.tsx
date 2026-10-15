@@ -8,11 +8,13 @@ export function NavLink({
   href,
   label,
   icon,
+  badge,
   onNavigate,
 }: {
   href: string;
   label: string;
   icon: ReactNode;
+  badge?: number;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -36,7 +38,12 @@ export function NavLink({
       <span className="shrink-0 [&>svg]:size-4" aria-hidden>
         {icon}
       </span>
-      {label}
+      <span className="flex-1">{label}</span>
+      {!!badge && badge > 0 && (
+        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-accent-contrast">
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
     </Link>
   );
 }

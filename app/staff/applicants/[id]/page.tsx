@@ -4,14 +4,16 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { findPossibleDuplicates } from "@/lib/applicants";
 import { getOpenSlots } from "@/lib/interview-slots";
+import { suggestMentors } from "@/lib/mentor-matching";
+import { getStaffNav } from "@/lib/staff-nav";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Field, Select, TextArea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ListChecks, CalendarPlus } from "lucide-react";
-import { submitVerification, scheduleInterview, submitScore, recordDecision } from "./actions";
+import { GraduationCap } from "lucide-react";
+import { submitVerification, scheduleInterview, submitScore, recordDecision, onboardStudent } from "./actions";
 
 const VERIFIED_OR_LATER = [
   "VERIFIED",
@@ -47,6 +49,7 @@ export default async function ApplicantDetailPage({
       documents: true,
       verification: true,
       interview: { include: { scores: { include: { panelist: true } } } },
+      student: true,
     },
   });
   if (!applicant) notFound();
@@ -65,19 +68,15 @@ export default async function ApplicantDetailPage({
   const openSlots =
     role === "COMMITTEE" && showInterviewSection && !applicant.interview ? await getOpenSlots() : [];
 
+  const canOnboard = role === "STAFF" && applicant.status === "ACCEPTED" && !applicant.student;
+  const [onboardColleges, mentorSuggestions] = canOnboard
+    ? await Promise.all([prisma.college.findMany({ orderBy: { name: "asc" } }), suggestMentors(applicant.id)])
+    : [[], []];
+
+  const nav = await getStaffNav(role, session.user.id);
+
   return (
-    <AppShell
-      role={role}
-      name={session.user.name ?? "Staff"}
-      nav={
-        role === "COMMITTEE"
-          ? [
-              { label: "Pipeline", href: "/staff", icon: <ListChecks /> },
-              { label: "Interview slots", href: "/staff/interview-slots", icon: <CalendarPlus /> },
-            ]
-          : [{ label: "Pipeline", href: "/staff", icon: <ListChecks /> }]
-      }
-    >
+    <AppShell role={role} name={session.user.name ?? "Staff"} nav={nav}>
       <PageHeader
         eyebrow="Applicant"
         title={applicant.fullName}
@@ -86,6 +85,27 @@ export default async function ApplicantDetailPage({
       />
 
       {error && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
+
+      {applicant.student && (
+        <Card className="mb-5 border-success/30 bg-success-soft/40">
+          <CardBody className="flex items-center gap-3">
+            <GraduationCap className="size-4 shrink-0 text-success" aria-hidden />
+            <p className="text-sm text-ink">
+              Onboarded as a student — <StatusBadge value={applicant.student.status} />
+            </p>
+          </CardBody>
+        </Card>
+      )}
+
+      {canOnboard && (
+        <OnboardingSection
+          applicantId={applicant.id}
+          defaultCollegeId={applicant.preferredCollegeId}
+          defaultProgram={applicant.courseInterest}
+          colleges={onboardColleges}
+          suggestions={mentorSuggestions}
+        />
+      )}
 
       {duplicates.length > 0 && (
         <Card className="mb-5 border-warning/30 bg-warning-soft/50">
@@ -411,6 +431,94 @@ function InterviewSection({
             </span>
           </div>
         )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function OnboardingSection({
+  applicantId,
+  defaultCollegeId,
+  defaultProgram,
+  colleges,
+  suggestions,
+}: {
+  applicantId: string;
+  defaultCollegeId: string | null;
+  defaultProgram: string | null;
+  colleges: { id: string; name: string; district: string }[];
+  suggestions: Awaited<ReturnType<typeof suggestMentors>>;
+}) {
+  return (
+    <Card className="mb-5">
+      <CardHeader
+        eyebrow="Onboarding"
+        title="Create the student record"
+        description="Accepted — map them to a college/program, pick a mentor, and confirm sponsorship coverage."
+      />
+      <CardBody>
+        <form action={onboardStudent.bind(null, applicantId)} className="space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <Select label="College" name="collegeId" required defaultValue={defaultCollegeId ?? ""} placeholder="Select college">
+              {colleges.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} · {c.district}
+                </option>
+              ))}
+            </Select>
+            <Field label="Program" name="program" required defaultValue={defaultProgram ?? ""} />
+          </div>
+          <Field label="Admission year" type="number" name="admissionYear" min={2000} max={2100} required defaultValue={new Date().getFullYear()} />
+
+          <div>
+            <p className="text-sm font-medium text-ink">Mentor — ranked suggestions</p>
+            <p className="text-xs text-ink-faint">Scored on specialty overlap, district, and current caseload. Pick one.</p>
+            {suggestions.length === 0 ? (
+              <p className="mt-2 text-sm text-ink-faint">No mentors with spare capacity right now.</p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {suggestions.map((s, i) => (
+                  <li key={s.mentorId}>
+                    <label className="flex items-start gap-3 rounded-md border border-border p-3 has-[:checked]:border-accent has-[:checked]:bg-accent-soft">
+                      <input type="radio" name="mentorId" value={s.mentorId} required defaultChecked={i === 0} className="mt-1 accent-accent" />
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-2 text-sm font-medium text-ink">
+                          {s.name}
+                          <Badge tone="neutral">{s.type === "ALUMNI" ? "Alumni mentor" : "Staff mentor"}</Badge>
+                        </span>
+                        <span className="mt-0.5 block text-xs text-ink-faint">
+                          {s.reasons.length > 0 ? s.reasons.join(" · ") : "No strong signal — general fit"}
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <p className="text-sm font-medium text-ink">Sponsorship coverage</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {[
+                ["tuitionCovered", "Tuition"],
+                ["hostelCovered", "Hostel"],
+                ["foodCovered", "Food"],
+                ["transportCovered", "Transport"],
+                ["materialsCovered", "Materials"],
+              ].map(([name, label]) => (
+                <label key={name} className="flex items-center gap-1.5 text-sm text-ink">
+                  <input type="checkbox" name={name} defaultChecked className="size-4 rounded border-border accent-accent" />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <Button type="submit" variant="primary" className="w-full" disabled={suggestions.length === 0}>
+            Onboard student
+          </Button>
+        </form>
       </CardBody>
     </Card>
   );

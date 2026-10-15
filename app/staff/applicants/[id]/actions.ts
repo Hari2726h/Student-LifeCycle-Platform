@@ -157,3 +157,70 @@ export async function recordDecision(applicantId: string, formData: FormData) {
 
   redirect(`/staff/applicants/${applicantId}`);
 }
+
+const onboardSchema = z.object({
+  collegeId: z.string().min(1),
+  program: z.string().min(2),
+  admissionYear: z.coerce.number().int().min(2000).max(2100),
+  mentorId: z.string().min(1),
+  tuitionCovered: z.coerce.boolean(),
+  hostelCovered: z.coerce.boolean(),
+  foodCovered: z.coerce.boolean(),
+  transportCovered: z.coerce.boolean(),
+  materialsCovered: z.coerce.boolean(),
+});
+
+/** Converts an ACCEPTED applicant into the long-lived Student record:
+ * college/program mapping, a sponsorship coverage checklist, and a mentor
+ * — picked by staff from the ranked suggestion list, never auto-assigned. */
+export async function onboardStudent(applicantId: string, formData: FormData) {
+  await requireRole(["STAFF"]);
+
+  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
+  if (applicant.status !== "ACCEPTED") {
+    redirect(`/staff/applicants/${applicantId}?error=Only+accepted+applicants+can+be+onboarded`);
+  }
+  const existing = await prisma.student.findUnique({ where: { applicantId } });
+  if (existing) redirect(`/staff/applicants/${applicantId}`);
+
+  const parsed = onboardSchema.safeParse({
+    collegeId: formData.get("collegeId"),
+    program: formData.get("program"),
+    admissionYear: formData.get("admissionYear"),
+    mentorId: formData.get("mentorId"),
+    tuitionCovered: formData.get("tuitionCovered"),
+    hostelCovered: formData.get("hostelCovered"),
+    foodCovered: formData.get("foodCovered"),
+    transportCovered: formData.get("transportCovered"),
+    materialsCovered: formData.get("materialsCovered"),
+  });
+  if (!parsed.success) {
+    redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
+  }
+  const data = parsed.data;
+
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: applicant.userId }, data: { role: "STUDENT" } }),
+    prisma.student.create({
+      data: {
+        userId: applicant.userId,
+        applicantId: applicant.id,
+        collegeId: data.collegeId,
+        program: data.program,
+        admissionYear: data.admissionYear,
+        mentorId: data.mentorId,
+        sponsorship: {
+          create: {
+            tuitionCovered: data.tuitionCovered,
+            hostelCovered: data.hostelCovered,
+            foodCovered: data.foodCovered,
+            transportCovered: data.transportCovered,
+            materialsCovered: data.materialsCovered,
+          },
+        },
+      },
+    }),
+  ]);
+
+  redirect(`/staff/applicants/${applicantId}`);
+}
