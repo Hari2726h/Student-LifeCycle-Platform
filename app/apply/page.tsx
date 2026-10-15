@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getWizardState, clampStep } from "@/lib/wizard";
-import { LANG_COOKIE, type Lang } from "@/lib/i18n";
+import { LANG_COOKIE, t, type Lang } from "@/lib/i18n";
+import { LanguageToggle } from "./language-toggle";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/brand-mark";
@@ -57,18 +58,22 @@ export default async function ApplyPage({
   const { applicant, maxStep, alreadySubmitted } = await getWizardState(session.user.id);
 
   if (alreadySubmitted && applicant) {
+    const strings = t(lang);
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg px-4 py-12">
         <div className="w-full max-w-sm text-center">
-          <BrandMark className="mx-auto size-8" />
-          <h1 className="mt-4 font-display text-xl font-medium text-ink">{applicant.fullName}</h1>
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BrandMark className="size-7" />
+              <span className="font-display text-sm font-medium text-ink">{strings.appName}</span>
+            </div>
+            <LanguageToggle lang={lang} />
+          </div>
+          <h1 className="font-display text-xl font-medium text-ink">{applicant.fullName}</h1>
           <div className="mt-2 flex justify-center">
             <StatusBadge value={applicant.status} />
           </div>
-          <p className="mt-4 text-sm text-ink-muted">
-            Your application is already in progress. A volunteer or committee member will be in touch — you don&apos;t
-            need to resubmit.
-          </p>
+          <p className="mt-4 text-sm text-ink-muted">{strings.alreadyInProgressNotice}</p>
         </div>
       </div>
     );

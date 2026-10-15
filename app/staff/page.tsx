@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ListChecks, AlertTriangle, UserPlus } from "lucide-react";
+import { ListChecks, AlertTriangle, UserPlus, CalendarPlus } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { DISTRICTS } from "@/lib/constants";
@@ -86,7 +86,18 @@ export default async function StaffHome({
       : [];
 
   return (
-    <AppShell role={role} name={session.user.name ?? "Staff"} nav={[{ label: "Pipeline", href: "/staff", icon: <ListChecks /> }]}>
+    <AppShell
+      role={role}
+      name={session.user.name ?? "Staff"}
+      nav={
+        role === "COMMITTEE"
+          ? [
+              { label: "Pipeline", href: "/staff", icon: <ListChecks /> },
+              { label: "Interview slots", href: "/staff/interview-slots", icon: <CalendarPlus /> },
+            ]
+          : [{ label: "Pipeline", href: "/staff", icon: <ListChecks /> }]
+      }
+    >
       <PageHeader
         eyebrow="Operations"
         title="Pipeline"

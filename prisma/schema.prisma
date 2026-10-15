@@ -146,9 +146,10 @@ model User {
   otpCode         String?
   otpExpiresAt    DateTime?
 
-  // Volunteers' home district — the basis for geo-assigning the
+  // Volunteers' coverage area — the basis for geo-assigning the
   // verification queue. Unused by other roles.
   district        String?
+  pincodes        String[] @default([])
 
   // One account can hold exactly one of each profile across its lifetime
   applicant      Applicant? @relation("ApplicantAccount")
@@ -160,6 +161,7 @@ model User {
   verificationsDone    Verification[]
   interviewDecisions   InterviewRecord[] @relation("InterviewDecidedBy")
   interviewScoresGiven InterviewScore[]
+  interviewSlotsCreated InterviewSlot[]
   mentorLogsResolved   MentorLog[]      @relation("RiskResolvedBy")
   documentsUploaded    Document[]
   auditLogEntries      AuditLog[]
@@ -240,6 +242,7 @@ model Verification {
   incomeBandVerified     Boolean  @default(false)
   housingCondition       HousingCondition?
   householdSizeConfirmed Int?
+  photoEvidenceConfirmed Boolean  @default(false)
   duplicateCheckPassed   Boolean  @default(true)
   decision               VerificationDecision @default(PENDING)
   notes                  String?
@@ -250,11 +253,32 @@ model Verification {
   @@index([decision])
 }
 
+// A committee member's declared availability — "panel availability" — that
+// applicants get scheduled into, rather than an interview time picked out
+// of thin air.
+model InterviewSlot {
+  id          String   @id @default(cuid())
+  scheduledAt DateTime
+  location    String
+  capacity    Int      @default(3)
+
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdById String
+
+  interviews  InterviewRecord[]
+
+  createdAt   DateTime @default(now())
+
+  @@index([scheduledAt])
+}
+
 model InterviewRecord {
   id             String   @id @default(cuid())
   applicant      Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
   applicantId    String   @unique
 
+  slot           InterviewSlot? @relation(fields: [slotId], references: [id])
+  slotId         String?
   scheduledAt    DateTime?
   location       String?
   decision       InterviewDecision @default(PENDING)

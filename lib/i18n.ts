@@ -44,6 +44,11 @@ export const STRINGS = {
     uploaded: "Uploaded",
     submitApplication: "Submit application",
     reviewNotice: "Review everything below before submitting. You won't be able to edit after submission.",
+    alreadyInProgressNotice:
+      "Your application is already in progress. A volunteer or committee member will be in touch — you don't need to resubmit.",
+    submittedTitle: "Application submitted",
+    submittedBody:
+      "A Maatram field volunteer has been assigned and will visit to verify your details. You can check your status anytime by returning to this page and signing in with your phone number.",
   },
   ta: {
     appName: "மாற்றம்",
@@ -85,6 +90,11 @@ export const STRINGS = {
     uploaded: "பதிவேற்றப்பட்டது",
     submitApplication: "விண்ணப்பத்தைச் சமர்ப்பிக்கவும்",
     reviewNotice: "சமர்ப்பிக்கும் முன் கீழே உள்ள அனைத்தையும் மதிப்பாய்வு செய்யவும். சமர்ப்பித்த பிறகு திருத்த முடியாது.",
+    alreadyInProgressNotice:
+      "உங்கள் விண்ணப்பம் ஏற்கனவே செயலில் உள்ளது. ஒரு தன்னார்வலர் அல்லது குழு உறுப்பினர் உங்களைத் தொடர்பு கொள்வார். மீண்டும் சமர்ப்பிக்க வேண்டியதில்லை.",
+    submittedTitle: "விண்ணப்பம் சமர்ப்பிக்கப்பட்டது",
+    submittedBody:
+      "மாற்றம் அமைப்பின் தன்னார்வலர் ஒருவர் நியமிக்கப்பட்டுள்ளார், விவரங்களைச் சரிபார்க்க வருகை தருவார். இப்பக்கத்திற்குத் திரும்பி உங்கள் தொலைபேசி எண்ணுடன் உள்நுழைந்து எந்நேரமும் நிலையைப் பார்க்கலாம்.",
   },
 } as const;
 

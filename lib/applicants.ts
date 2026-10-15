@@ -46,17 +46,18 @@ export async function findPossibleDuplicates(applicantId: string) {
   });
 }
 
-/** Geo-assignment: prefer a volunteer whose home district matches the
- * applicant's, tie-broken by whoever currently has the lightest
- * verification queue. Falls back to the lightest overall load if nobody
- * covers that district, and to no assignment if there are no volunteers
- * in the system yet. */
-export async function assignVolunteer(district: string) {
+/** Geo-assignment: prefer a volunteer whose declared coverage includes the
+ * applicant's exact pincode, then one whose home district matches, then
+ * whoever currently has the lightest verification queue. Falls back to the
+ * lightest overall load if nobody covers the area, and to no assignment if
+ * there are no volunteers in the system yet. */
+export async function assignVolunteer(district: string, pincode?: string) {
   const volunteers = await prisma.user.findMany({
     where: { role: "VOLUNTEER", isActive: true },
     select: {
       id: true,
       district: true,
+      pincodes: true,
       _count: { select: { volunteerAssignments: { where: { status: "UNDER_VERIFICATION" } } } },
     },
   });
@@ -64,8 +65,14 @@ export async function assignVolunteer(district: string) {
   if (volunteers.length === 0) return null;
 
   const scored = volunteers
-    .map((v) => ({ id: v.id, inDistrict: v.district === district, load: v._count.volunteerAssignments }))
+    .map((v) => ({
+      id: v.id,
+      inPincode: !!pincode && v.pincodes.includes(pincode),
+      inDistrict: v.district === district,
+      load: v._count.volunteerAssignments,
+    }))
     .sort((a, b) => {
+      if (a.inPincode !== b.inPincode) return a.inPincode ? -1 : 1;
       if (a.inDistrict !== b.inDistrict) return a.inDistrict ? -1 : 1;
       return a.load - b.load;
     });

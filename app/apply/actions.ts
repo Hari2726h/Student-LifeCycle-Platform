@@ -194,7 +194,7 @@ export async function submitApplicationAction() {
     redirect("/apply?step=5&error=Please+complete+every+step+before+submitting");
   }
 
-  const volunteerId = await assignVolunteer(applicant.district);
+  const volunteerId = await assignVolunteer(applicant.district, applicant.sensitiveInfo?.pincode);
 
   await prisma.applicant.update({
     where: { id: applicant.id },

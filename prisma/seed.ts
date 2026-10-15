@@ -42,7 +42,7 @@ async function hash(pw: string) {
   return bcrypt.hash(pw, 10);
 }
 
-async function createUser(opts: { name: string; email: string; role: Role; phone?: string; district?: string }) {
+async function createUser(opts: { name: string; email: string; role: Role; phone?: string; district?: string; pincodes?: string[] }) {
   return prisma.user.create({
     data: {
       name: opts.name,
@@ -50,6 +50,7 @@ async function createUser(opts: { name: string; email: string; role: Role; phone
       phone: opts.phone,
       role: opts.role,
       district: opts.district,
+      pincodes: opts.pincodes ?? [],
       passwordHash: await hash(DEV_PASSWORD),
     },
   });
@@ -80,8 +81,20 @@ async function main() {
   // ── Operational accounts (one per role, demo-ready) ─────────────────
   await createUser({ name: "Lakshmi Narayanan", email: "staff@maatram.org", role: Role.STAFF });
   const committee = await createUser({ name: "Dr. Suresh Babu", email: "committee@maatram.org", role: Role.COMMITTEE });
-  const volunteer1 = await createUser({ name: "Anitha Raman", email: "volunteer@maatram.org", role: Role.VOLUNTEER, district: "Chennai" });
-  const volunteer2 = await createUser({ name: "Bala Chandran", email: "volunteer2@maatram.org", role: Role.VOLUNTEER, district: "Madurai" });
+  const volunteer1 = await createUser({
+    name: "Anitha Raman",
+    email: "volunteer@maatram.org",
+    role: Role.VOLUNTEER,
+    district: "Chennai",
+    pincodes: ["600001", "600002", "600028"],
+  });
+  const volunteer2 = await createUser({
+    name: "Bala Chandran",
+    email: "volunteer2@maatram.org",
+    role: Role.VOLUNTEER,
+    district: "Madurai",
+    pincodes: ["625001", "625002"],
+  });
 
   const mentorUser1 = await createUser({ name: "Revathi Subramaniam", email: "mentor1@maatram.org", role: Role.MENTOR });
   const mentorUser2 = await createUser({ name: "Karthik Ganesan", email: "mentor2@maatram.org", role: Role.MENTOR });

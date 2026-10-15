@@ -6,9 +6,11 @@ import { signIn } from "next-auth/react";
 import { AlertCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/input";
+import { BrandMark } from "@/components/brand-mark";
 import { requestOtpAction } from "./actions";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { LanguageToggle } from "./language-toggle";
 
 export function PhoneGate({ lang }: { lang: Lang }) {
   const strings = t(lang);
@@ -51,6 +53,13 @@ export function PhoneGate({ lang }: { lang: Lang }) {
 
   return (
     <div className="w-full max-w-sm">
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BrandMark className="size-7" />
+          <span className="font-display text-sm font-medium text-ink">{strings.appName}</span>
+        </div>
+        <LanguageToggle lang={lang} />
+      </div>
       <h1 className="font-display text-xl font-medium text-ink">{strings.phoneGateTitle}</h1>
       <p className="mt-1 text-sm text-ink-muted">{strings.phoneGateSubtitle}</p>
 

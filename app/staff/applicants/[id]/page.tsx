@@ -3,13 +3,14 @@ import { AlertTriangle, Download, FileWarning } from "lucide-react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { findPossibleDuplicates } from "@/lib/applicants";
+import { getOpenSlots } from "@/lib/interview-slots";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Field, Select, TextArea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ListChecks } from "lucide-react";
+import { ListChecks, CalendarPlus } from "lucide-react";
 import { submitVerification, scheduleInterview, submitScore, recordDecision } from "./actions";
 
 const VERIFIED_OR_LATER = [
@@ -61,11 +62,21 @@ export default async function ApplicantDetailPage({
   const showInterviewSection = VERIFIED_OR_LATER.includes(applicant.status);
   const myScore = applicant.interview?.scores.find((s) => s.panelistId === session.user.id);
 
+  const openSlots =
+    role === "COMMITTEE" && showInterviewSection && !applicant.interview ? await getOpenSlots() : [];
+
   return (
     <AppShell
       role={role}
       name={session.user.name ?? "Staff"}
-      nav={[{ label: "Pipeline", href: "/staff", icon: <ListChecks /> }]}
+      nav={
+        role === "COMMITTEE"
+          ? [
+              { label: "Pipeline", href: "/staff", icon: <ListChecks /> },
+              { label: "Interview slots", href: "/staff/interview-slots", icon: <CalendarPlus /> },
+            ]
+          : [{ label: "Pipeline", href: "/staff", icon: <ListChecks /> }]
+      }
     >
       <PageHeader
         eyebrow="Applicant"
@@ -151,7 +162,13 @@ export default async function ApplicantDetailPage({
           )}
 
           {showInterviewSection && (
-            <InterviewSection applicantId={applicant.id} interview={applicant.interview} role={role} myScore={myScore} />
+            <InterviewSection
+              applicantId={applicant.id}
+              interview={applicant.interview}
+              role={role}
+              myScore={myScore}
+              openSlots={openSlots}
+            />
           )}
         </div>
 
@@ -187,6 +204,7 @@ function VerificationSection({
     incomeBandVerified: boolean;
     housingCondition: string | null;
     householdSizeConfirmed: number | null;
+    photoEvidenceConfirmed: boolean;
     notes: string | null;
   } | null;
   canAct: boolean;
@@ -215,6 +233,10 @@ function VerificationSection({
               required
               defaultValue={verification?.householdSizeConfirmed ?? undefined}
             />
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input type="checkbox" name="photoEvidenceConfirmed" defaultChecked={verification?.photoEvidenceConfirmed} className="size-4 rounded border-border accent-accent" />
+              Photo evidence collected during the visit
+            </label>
             <label className="flex items-center gap-2 text-sm text-ink">
               <input type="checkbox" name="duplicateCheckPassed" defaultChecked className="size-4 rounded border-border accent-accent" />
               No duplicate/returning application found
@@ -247,6 +269,7 @@ function VerificationSection({
             </Badge>
             <Row label="Housing" value={verification.housingCondition?.replaceAll("_", " ") ?? "—"} />
             <Row label="Household size" value={String(verification.householdSizeConfirmed ?? "—")} />
+            <Row label="Photo evidence" value={verification.photoEvidenceConfirmed ? "Collected" : "Not collected"} />
             {verification.notes && <p className="text-ink-muted">{verification.notes}</p>}
           </div>
         )}
@@ -260,6 +283,7 @@ function InterviewSection({
   interview,
   role,
   myScore,
+  openSlots,
 }: {
   applicantId: string;
   interview: {
@@ -272,6 +296,7 @@ function InterviewSection({
   } | null;
   role: string;
   myScore?: { academicMerit: number; financialNeed: number; communication: number; intentClarity: number };
+  openSlots: { id: string; scheduledAt: Date; location: string; capacity: number; _count: { interviews: number } }[];
 }) {
   if (!interview) {
     if (role !== "COMMITTEE") {
@@ -286,15 +311,26 @@ function InterviewSection({
     }
     return (
       <Card>
-        <CardHeader eyebrow="Selection" title="Schedule interview" />
+        <CardHeader eyebrow="Selection" title="Schedule interview" description="Picks from the panel's declared availability." />
         <CardBody>
-          <form action={scheduleInterview.bind(null, applicantId)} className="space-y-4">
-            <Field label="Date & time" type="datetime-local" name="scheduledAt" required />
-            <Field label="Location" name="location" required defaultValue="Maatram Foundation Centre, Chennai" />
-            <Button type="submit" variant="primary" className="w-full">
-              Schedule
-            </Button>
-          </form>
+          {openSlots.length === 0 ? (
+            <p className="text-sm text-ink-faint">
+              No open slots. <a href="/staff/interview-slots" className="text-accent hover:text-accent-strong">Declare one</a> first.
+            </p>
+          ) : (
+            <form action={scheduleInterview.bind(null, applicantId)} className="space-y-4">
+              <Select label="Available slot" name="slotId" required placeholder="Select a slot">
+                {openSlots.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.scheduledAt.toLocaleString()} · {s.location} ({s.capacity - s._count.interviews} open)
+                  </option>
+                ))}
+              </Select>
+              <Button type="submit" variant="primary" className="w-full">
+                Schedule
+              </Button>
+            </form>
+          )}
         </CardBody>
       </Card>
     );

@@ -17,6 +17,7 @@ const verificationSchema = z.object({
   incomeBandVerified: z.coerce.boolean(),
   housingCondition: z.enum(["KUTCHA", "SEMI_PUCCA", "PUCCA"]),
   householdSizeConfirmed: z.coerce.number().int().min(1).max(30),
+  photoEvidenceConfirmed: z.coerce.boolean(),
   duplicateCheckPassed: z.coerce.boolean(),
   decision: z.enum(["APPROVED", "REJECTED", "NEEDS_FOLLOW_UP"]),
   notes: z.string().optional(),
@@ -34,6 +35,7 @@ export async function submitVerification(applicantId: string, formData: FormData
     incomeBandVerified: formData.get("incomeBandVerified"),
     housingCondition: formData.get("housingCondition"),
     householdSizeConfirmed: formData.get("householdSizeConfirmed"),
+    photoEvidenceConfirmed: formData.get("photoEvidenceConfirmed"),
     duplicateCheckPassed: formData.get("duplicateCheckPassed"),
     decision: formData.get("decision"),
     notes: formData.get("notes") || undefined,
@@ -56,26 +58,32 @@ export async function submitVerification(applicantId: string, formData: FormData
   redirect(`/staff/applicants/${applicantId}`);
 }
 
-const scheduleSchema = z.object({
-  scheduledAt: z.coerce.date(),
-  location: z.string().min(2),
-});
-
+/** Books the applicant into a committee member's declared slot (panel
+ * availability) rather than a freely-typed date/time — a slot can hold
+ * `capacity` applicants before it's full. */
 export async function scheduleInterview(applicantId: string, formData: FormData) {
   await requireRole(["COMMITTEE"]);
 
-  const parsed = scheduleSchema.safeParse({
-    scheduledAt: formData.get("scheduledAt"),
-    location: formData.get("location"),
+  const slotId = formData.get("slotId");
+  if (typeof slotId !== "string" || !slotId) {
+    redirect(`/staff/applicants/${applicantId}?error=Select+an+available+slot`);
+  }
+
+  const slot = await prisma.interviewSlot.findUnique({
+    where: { id: slotId },
+    include: { _count: { select: { interviews: true } } },
   });
-  if (!parsed.success) {
-    redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
+  if (!slot) {
+    redirect(`/staff/applicants/${applicantId}?error=That+slot+no+longer+exists`);
+  }
+  if (slot._count.interviews >= slot.capacity) {
+    redirect(`/staff/applicants/${applicantId}?error=That+slot+is+already+full`);
   }
 
   await prisma.interviewRecord.upsert({
     where: { applicantId },
-    create: { applicantId, ...parsed.data },
-    update: { ...parsed.data },
+    create: { applicantId, slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
+    update: { slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
   });
   await prisma.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEW_SCHEDULED" } });
 
