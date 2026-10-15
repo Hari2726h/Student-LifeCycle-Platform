@@ -47,6 +47,7 @@ enum HousingCondition {
 }
 
 enum ApplicationStatus {
+  DRAFT
   SUBMITTED
   UNDER_VERIFICATION
   VERIFIED
@@ -134,11 +135,20 @@ model User {
   name         String
   email        String   @unique
   phone        String?  @unique
-  passwordHash String
+  passwordHash String?
   role         Role
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // Phone + OTP sign-in for applicants (no SMS gateway in this dev build —
+  // see lib/otp.ts; the code is surfaced in the UI instead of texted out).
+  otpCode         String?
+  otpExpiresAt    DateTime?
+
+  // Volunteers' home district — the basis for geo-assigning the
+  // verification queue. Unused by other roles.
+  district        String?
 
   // One account can hold exactly one of each profile across its lifetime
   applicant      Applicant? @relation("ApplicantAccount")
@@ -172,12 +182,14 @@ model Applicant {
   phone            String
   email            String?
   district         String
-  boardPercentage  Float
-  courseInterest   String
+  // Filled a step later than the row is created (academic-details step),
+  // so these stay nullable to support progressive save-as-you-go.
+  boardPercentage  Float?
+  courseInterest   String?
   preferredCollege College? @relation(fields: [preferredCollegeId], references: [id])
   preferredCollegeId String?
 
-  status           ApplicationStatus @default(SUBMITTED)
+  status           ApplicationStatus @default(DRAFT)
 
   volunteer        User?    @relation("AssignedVolunteer", fields: [volunteerId], references: [id])
   volunteerId      String?

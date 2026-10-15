@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# uploaded applicant documents (local-disk dev storage, never committed)
+/uploads
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

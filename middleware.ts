@@ -17,6 +17,7 @@ const PROTECTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/portal", roles: ["STUDENT", "ALUMNI"] },
   { prefix: "/mentor", roles: ["MENTOR"] },
   { prefix: "/staff", roles: ["STAFF", "COMMITTEE", "VOLUNTEER"] },
+  { prefix: "/apply/assist", roles: ["VOLUNTEER"] },
 ];
 
 export default auth((req) => {
@@ -40,5 +41,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/applicant/:path*", "/portal/:path*", "/mentor/:path*", "/staff/:path*"],
+  matcher: ["/applicant/:path*", "/portal/:path*", "/mentor/:path*", "/staff/:path*", "/apply/assist/:path*"],
 };

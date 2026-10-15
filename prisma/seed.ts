@@ -7,17 +7,11 @@
 import { PrismaClient, Role, CollegeType, Gender, FamilySituation } from "@prisma/client";
 import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
+import { DISTRICTS, COURSES } from "../lib/constants";
 
 const prisma = new PrismaClient();
 
 const DEV_PASSWORD = "Passw0rd!";
-
-const DISTRICTS = [
-  "Thiruvallur", "Chennai", "Kanchipuram", "Vellore", "Villupuram",
-  "Salem", "Namakkal", "Coimbatore", "Erode", "Tiruppur",
-  "Madurai", "Dindigul", "Tiruchirappalli", "Thanjavur",
-  "Nagapattinam", "Tirunelveli", "Thoothukudi", "Kanyakumari",
-];
 
 const FEMALE_NAMES = [
   "Priya", "Kavya", "Divya", "Meena", "Lakshmi", "Deepika", "Swetha",
@@ -35,11 +29,6 @@ const LAST_NAMES = [
   "Ganesan", "Velu", "Shankar", "Chandran",
 ];
 
-const COURSES = [
-  "B.E. Computer Science", "B.E. Mechanical Engineering", "B.Tech Information Technology",
-  "B.Sc Mathematics", "B.Com Accounting & Finance", "B.A. Economics", "B.E. Electronics & Communication",
-];
-
 function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -53,13 +42,14 @@ async function hash(pw: string) {
   return bcrypt.hash(pw, 10);
 }
 
-async function createUser(opts: { name: string; email: string; role: Role; phone?: string }) {
+async function createUser(opts: { name: string; email: string; role: Role; phone?: string; district?: string }) {
   return prisma.user.create({
     data: {
       name: opts.name,
       email: opts.email,
       phone: opts.phone,
       role: opts.role,
+      district: opts.district,
       passwordHash: await hash(DEV_PASSWORD),
     },
   });
@@ -90,8 +80,8 @@ async function main() {
   // ── Operational accounts (one per role, demo-ready) ─────────────────
   await createUser({ name: "Lakshmi Narayanan", email: "staff@maatram.org", role: Role.STAFF });
   const committee = await createUser({ name: "Dr. Suresh Babu", email: "committee@maatram.org", role: Role.COMMITTEE });
-  const volunteer1 = await createUser({ name: "Anitha Raman", email: "volunteer@maatram.org", role: Role.VOLUNTEER });
-  const volunteer2 = await createUser({ name: "Bala Chandran", email: "volunteer2@maatram.org", role: Role.VOLUNTEER });
+  const volunteer1 = await createUser({ name: "Anitha Raman", email: "volunteer@maatram.org", role: Role.VOLUNTEER, district: "Chennai" });
+  const volunteer2 = await createUser({ name: "Bala Chandran", email: "volunteer2@maatram.org", role: Role.VOLUNTEER, district: "Madurai" });
 
   const mentorUser1 = await createUser({ name: "Revathi Subramaniam", email: "mentor1@maatram.org", role: Role.MENTOR });
   const mentorUser2 = await createUser({ name: "Karthik Ganesan", email: "mentor2@maatram.org", role: Role.MENTOR });
@@ -297,7 +287,7 @@ async function main() {
         userId: a.userId,
         applicantId: a.id,
         collegeId: a.preferredCollegeId ?? randomFrom(colleges).id,
-        program: a.courseInterest,
+        program: a.courseInterest ?? randomFrom(COURSES),
         admissionYear: 2023,
         status: plan.status,
         mentorId: mentor.id,

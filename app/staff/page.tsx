@@ -1,6 +1,8 @@
-import { ListChecks, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { ListChecks, AlertTriangle, UserPlus } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
+import { DISTRICTS } from "@/lib/constants";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/badge";
@@ -8,8 +10,12 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatStrip } from "@/components/ui/stat-strip";
 import { Table, Thead, Th, Tr, Td, TableScroll } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Select } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import type { ApplicationStatus } from "@prisma/client";
 
 const APPLICANT_STAGE_ORDER = [
+  "DRAFT",
   "SUBMITTED",
   "UNDER_VERIFICATION",
   "VERIFIED",
@@ -23,9 +29,14 @@ const APPLICANT_STAGE_ORDER = [
 
 const STUDENT_STAGE_ORDER = ["ONBOARDING", "ACTIVE", "PLACED", "ALUMNI", "WITHDRAWN", "DROPPED_OUT"] as const;
 
-export default async function StaffHome() {
+export default async function StaffHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ district?: string; collegeId?: string; status?: string }>;
+}) {
   const session = await requireRole(["STAFF", "COMMITTEE", "VOLUNTEER"]);
   const role = session.user.role;
+  const filters = await searchParams;
 
   const [applicantCounts, studentCounts] = await Promise.all([
     prisma.applicant.groupBy({ by: ["status"], _count: true }),
@@ -51,9 +62,15 @@ export default async function StaffHome() {
         })
       : [];
 
+  const colleges = role === "STAFF" ? await prisma.college.findMany({ orderBy: { name: "asc" } }) : [];
   const fullPipeline =
     role === "STAFF"
       ? await prisma.applicant.findMany({
+          where: {
+            ...(filters.district ? { district: filters.district } : {}),
+            ...(filters.collegeId ? { preferredCollegeId: filters.collegeId } : {}),
+            ...(filters.status ? { status: filters.status as ApplicationStatus } : {}),
+          },
           orderBy: { createdAt: "desc" },
           include: { volunteer: true },
           take: 25,
@@ -74,6 +91,13 @@ export default async function StaffHome() {
         eyebrow="Operations"
         title="Pipeline"
         description="Every applicant and student, from first submission to alumni."
+        action={
+          role === "VOLUNTEER" ? (
+            <Button href="/apply/assist" variant="primary" size="sm">
+              <UserPlus className="size-4" aria-hidden /> Start a visit application
+            </Button>
+          ) : undefined
+        }
       />
 
       <div className="space-y-2.5">
@@ -93,6 +117,7 @@ export default async function StaffHome() {
               empty="No applicants assigned to you right now."
               columns={["Name", "District", "Status"]}
               render={(a) => [a.fullName, a.district, <StatusBadge key="s" value={a.status} />]}
+              hrefFor={(a) => `/staff/applicants/${a.id}`}
             />
           </Card>
         </section>
@@ -116,6 +141,7 @@ export default async function StaffHome() {
                   : "–";
                 return [a.fullName, a.district, <span key="v" className="font-mono tabular-nums">{avg}</span>, <StatusBadge key="s" value={a.status} />];
               }}
+              hrefFor={(a) => `/staff/applicants/${a.id}`}
             />
           </Card>
         </section>
@@ -126,11 +152,40 @@ export default async function StaffHome() {
           <section className="mt-8">
             <Card>
               <CardHeader eyebrow="Latest 25" title="Full pipeline" />
+              <form method="GET" className="grid grid-cols-1 gap-3 px-5 pb-4 sm:grid-cols-3">
+                <Select label="District" name="district" defaultValue={filters.district ?? ""} placeholder="All districts">
+                  {DISTRICTS.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </Select>
+                <Select label="College" name="collegeId" defaultValue={filters.collegeId ?? ""} placeholder="All colleges">
+                  {colleges.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+                <div className="flex items-end gap-2">
+                  <Select label="Status" name="status" defaultValue={filters.status ?? ""} placeholder="All statuses" className="flex-1">
+                    {APPLICANT_STAGE_ORDER.map((s) => (
+                      <option key={s} value={s}>
+                        {s.replaceAll("_", " ")}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button type="submit" variant="secondary" size="md">
+                    Filter
+                  </Button>
+                </div>
+              </form>
               <PipelineTable
                 rows={fullPipeline}
-                empty="No applicants yet."
+                empty="No applicants match these filters."
                 columns={["Name", "District", "Volunteer", "Status"]}
                 render={(a) => [a.fullName, a.district, a.volunteer?.name ?? "Unassigned", <StatusBadge key="s" value={a.status} />]}
+                hrefFor={(a) => `/staff/applicants/${a.id}`}
               />
             </Card>
           </section>
@@ -170,11 +225,13 @@ function PipelineTable<T>({
   columns,
   render,
   empty,
+  hrefFor,
 }: {
   rows: T[];
   columns: string[];
   render: (row: T) => React.ReactNode[];
   empty: string;
+  hrefFor?: (row: T) => string;
 }) {
   if (rows.length === 0) {
     return (
@@ -195,13 +252,24 @@ function PipelineTable<T>({
             </tr>
           </Thead>
           <tbody>
-            {rows.map((row, i) => (
-              <Tr key={i}>
-                {render(row).map((cell, j) => (
-                  <Td key={j}>{cell}</Td>
-                ))}
-              </Tr>
-            ))}
+            {rows.map((row, i) => {
+              const cells = render(row);
+              return (
+                <Tr key={i}>
+                  {cells.map((cell, j) =>
+                    j === 0 && hrefFor ? (
+                      <Td key={j}>
+                        <Link href={hrefFor(row)} className="font-medium text-accent hover:text-accent-strong">
+                          {cell}
+                        </Link>
+                      </Td>
+                    ) : (
+                      <Td key={j}>{cell}</Td>
+                    ),
+                  )}
+                </Tr>
+              );
+            })}
           </tbody>
         </Table>
       </TableScroll>
