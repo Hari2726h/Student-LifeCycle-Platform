@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
+import { appendEvent } from "@/lib/events";
 
 async function requireRole(roles: string[]) {
   const session = await auth();
@@ -45,15 +46,23 @@ export async function submitVerification(applicantId: string, formData: FormData
   }
   const data = parsed.data;
 
-  await prisma.verification.upsert({
-    where: { applicantId },
-    create: { applicantId, volunteerId: user.id, visitDate: new Date(), ...data },
-    update: { visitDate: new Date(), ...data },
-  });
-
   const nextStatus =
     data.decision === "APPROVED" ? "VERIFIED" : data.decision === "REJECTED" ? "REJECTED" : "UNDER_VERIFICATION";
-  await prisma.applicant.update({ where: { id: applicantId }, data: { status: nextStatus } });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.verification.upsert({
+      where: { applicantId },
+      create: { applicantId, volunteerId: user.id, visitDate: new Date(), ...data },
+      update: { visitDate: new Date(), ...data },
+    });
+    await tx.applicant.update({ where: { id: applicantId }, data: { status: nextStatus } });
+    await appendEvent(tx, {
+      aggregateType: "Applicant",
+      aggregateId: applicantId,
+      type: "APPLICANT_STATUS_CHANGED",
+      payload: { fromStatus: applicant.status, toStatus: nextStatus, actorId: user.id, action: "VERIFICATION_SUBMITTED", decision: data.decision },
+    });
+  });
 
   redirect(`/staff/applicants/${applicantId}`);
 }
@@ -62,7 +71,7 @@ export async function submitVerification(applicantId: string, formData: FormData
  * availability) rather than a freely-typed date/time — a slot can hold
  * `capacity` applicants before it's full. */
 export async function scheduleInterview(applicantId: string, formData: FormData) {
-  await requireRole(["COMMITTEE"]);
+  const user = await requireRole(["COMMITTEE"]);
 
   const slotId = formData.get("slotId");
   if (typeof slotId !== "string" || !slotId) {
@@ -80,12 +89,22 @@ export async function scheduleInterview(applicantId: string, formData: FormData)
     redirect(`/staff/applicants/${applicantId}?error=That+slot+is+already+full`);
   }
 
-  await prisma.interviewRecord.upsert({
-    where: { applicantId },
-    create: { applicantId, slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
-    update: { slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
+  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.interviewRecord.upsert({
+      where: { applicantId },
+      create: { applicantId, slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
+      update: { slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
+    });
+    await tx.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEW_SCHEDULED" } });
+    await appendEvent(tx, {
+      aggregateType: "Applicant",
+      aggregateId: applicantId,
+      type: "APPLICANT_STATUS_CHANGED",
+      payload: { fromStatus: applicant.status, toStatus: "INTERVIEW_SCHEDULED", actorId: user.id, action: "INTERVIEW_SCHEDULED", slotId: slot.id },
+    });
   });
-  await prisma.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEW_SCHEDULED" } });
 
   redirect(`/staff/applicants/${applicantId}`);
 }
@@ -116,14 +135,23 @@ export async function submitScore(applicantId: string, formData: FormData) {
   if (!parsed.success) {
     redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
   }
+  const data = parsed.data;
+  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
 
-  await prisma.interviewScore.upsert({
-    where: { interviewId_panelistId: { interviewId: interview.id, panelistId: user.id } },
-    create: { interviewId: interview.id, panelistId: user.id, ...parsed.data },
-    update: { ...parsed.data },
+  await prisma.$transaction(async (tx) => {
+    await tx.interviewScore.upsert({
+      where: { interviewId_panelistId: { interviewId: interview.id, panelistId: user.id } },
+      create: { interviewId: interview.id, panelistId: user.id, ...data },
+      update: { ...data },
+    });
+    await tx.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEWED" } });
+    await appendEvent(tx, {
+      aggregateType: "Applicant",
+      aggregateId: applicantId,
+      type: "APPLICANT_STATUS_CHANGED",
+      payload: { fromStatus: applicant.status, toStatus: "INTERVIEWED", actorId: user.id, action: "SCORE_SUBMITTED" },
+    });
   });
-
-  await prisma.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEWED" } });
 
   redirect(`/staff/applicants/${applicantId}`);
 }
@@ -149,11 +177,21 @@ export async function recordDecision(applicantId: string, formData: FormData) {
     redirect(`/staff/applicants/${applicantId}?error=At+least+one+scorecard+is+required+first`);
   }
 
-  await prisma.interviewRecord.update({
-    where: { applicantId },
-    data: { decision, decidedAt: new Date(), decidedById: user.id },
+  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.interviewRecord.update({
+      where: { applicantId },
+      data: { decision, decidedAt: new Date(), decidedById: user.id },
+    });
+    await tx.applicant.update({ where: { id: applicantId }, data: { status: decision } });
+    await appendEvent(tx, {
+      aggregateType: "Applicant",
+      aggregateId: applicantId,
+      type: "APPLICANT_STATUS_CHANGED",
+      payload: { fromStatus: applicant.status, toStatus: decision, actorId: user.id, action: "COMMITTEE_DECISION" },
+    });
   });
-  await prisma.applicant.update({ where: { id: applicantId }, data: { status: decision } });
 
   redirect(`/staff/applicants/${applicantId}`);
 }
@@ -174,7 +212,7 @@ const onboardSchema = z.object({
  * college/program mapping, a sponsorship coverage checklist, and a mentor
  * — picked by staff from the ranked suggestion list, never auto-assigned. */
 export async function onboardStudent(applicantId: string, formData: FormData) {
-  await requireRole(["STAFF"]);
+  const staffUser = await requireRole(["STAFF"]);
 
   const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
   if (applicant.status !== "ACCEPTED") {
@@ -199,9 +237,9 @@ export async function onboardStudent(applicantId: string, formData: FormData) {
   }
   const data = parsed.data;
 
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: applicant.userId }, data: { role: "STUDENT" } }),
-    prisma.student.create({
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: applicant.userId }, data: { role: "STUDENT" } });
+    const student = await tx.student.create({
       data: {
         userId: applicant.userId,
         applicantId: applicant.id,
@@ -219,8 +257,14 @@ export async function onboardStudent(applicantId: string, formData: FormData) {
           },
         },
       },
-    }),
-  ]);
+    });
+    await appendEvent(tx, {
+      aggregateType: "Student",
+      aggregateId: student.id,
+      type: "STUDENT_ONBOARDED",
+      payload: { applicantId, mentorId: data.mentorId, collegeId: data.collegeId, actorId: staffUser.id },
+    });
+  });
 
   redirect(`/staff/applicants/${applicantId}`);
 }

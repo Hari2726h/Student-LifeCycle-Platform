@@ -8,6 +8,7 @@ import { auth } from "@/auth";
 import { requestOtp } from "@/lib/otp";
 import { saveUploadedFile } from "@/lib/uploads";
 import { assignVolunteer } from "@/lib/applicants";
+import { appendEvent } from "@/lib/events";
 import { LANG_COOKIE, type Lang } from "@/lib/i18n";
 import { Role, type DocumentKind } from "@prisma/client";
 
@@ -203,12 +204,19 @@ export async function submitApplicationAction() {
   }
 
   const volunteerId = await assignVolunteer(applicant.district, applicant.sensitiveInfo?.pincode);
+  const nextStatus = volunteerId ? "UNDER_VERIFICATION" : "SUBMITTED";
 
-  await prisma.applicant.update({
-    where: { id: applicant.id },
-    data: volunteerId
-      ? { status: "UNDER_VERIFICATION", volunteerId }
-      : { status: "SUBMITTED" },
+  await prisma.$transaction(async (tx) => {
+    await tx.applicant.update({
+      where: { id: applicant.id },
+      data: volunteerId ? { status: "UNDER_VERIFICATION", volunteerId } : { status: "SUBMITTED" },
+    });
+    await appendEvent(tx, {
+      aggregateType: "Applicant",
+      aggregateId: applicant.id,
+      type: "APPLICANT_STATUS_CHANGED",
+      payload: { fromStatus: "DRAFT", toStatus: nextStatus, action: "APPLICATION_SUBMITTED", volunteerId },
+    });
   });
 
   redirect("/apply/submitted");

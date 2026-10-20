@@ -174,7 +174,6 @@ model User {
   interviewSlotsCreated InterviewSlot[]
   mentorLogsResolved   MentorLog[]      @relation("RiskResolvedBy")
   documentsUploaded    Document[]
-  auditLogEntries      AuditLog[]
   notifications        Notification[]
   followUpsAssigned    FollowUpAction[] @relation("FollowUpAssignee")
   followUpsCreated     FollowUpAction[] @relation("FollowUpCreatedBy")
@@ -549,20 +548,36 @@ model Document {
 
 // Hardened properly in Phase 5 (immutability, full coverage); the table
 // exists from Phase 1 so nothing has to be retrofitted later.
-model AuditLog {
-  id         String   @id @default(cuid())
-  actor      User?    @relation(fields: [actorId], references: [id])
-  actorId    String?
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 4: the event log — every important change is appended here in the
+// same transaction as the write itself. This *is* the audit trail (no
+// separate table), and it's the source background workers replay from.
+// ──────────────────────────────────────────────────────────────────────────
 
-  action     String // e.g. "STATUS_CHANGE", "VIEW_SENSITIVE_INFO"
-  entityType String
-  entityId   String
-  metadata   Json?
+model Event {
+  id            String   @id @default(cuid())
+  // Assigned by Postgres at INSERT time, strictly increasing — the cursor
+  // workers bookmark against. See lib/events.ts for why a time-based cursor
+  // alone isn't safe (events can commit out of sequence order).
+  sequence      Int      @default(autoincrement()) @unique
 
-  createdAt  DateTime @default(now())
+  aggregateType String // e.g. "Applicant", "MentorLog", "CareerEvent"
+  aggregateId   String
+  type          String // e.g. "RISK_FLAG_LOGGED", "APPLICANT_STATUS_CHANGED"
+  payload       Json
 
-  @@index([entityType, entityId])
-  @@index([actorId])
+  occurredAt    DateTime @default(now())
+
+  @@index([type, sequence])
+  @@index([aggregateType, aggregateId])
+}
+
+// One row per background worker, tracking how far it has replayed.
+model ReplayBookmark {
+  id           String   @id @default(cuid())
+  workerName   String   @unique
+  lastSequence Int      @default(0)
+  updatedAt    DateTime @updatedAt
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -585,9 +600,15 @@ model Notification {
   student     Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId   String?
 
+  // The event this notification was derived from. The (sourceEventId,
+  // recipientId) pair is what makes the worker replay-safe: reprocessing
+  // the same event upserts the same row instead of sending it twice.
+  sourceEventId String?
+
   read        Boolean          @default(false)
   createdAt   DateTime         @default(now())
 
+  @@unique([sourceEventId, recipientId])
   @@index([recipientId, read])
 }
 

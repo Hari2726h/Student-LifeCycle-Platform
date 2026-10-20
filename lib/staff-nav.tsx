@@ -1,4 +1,4 @@
-import { ListChecks, CalendarPlus, Bell } from "lucide-react";
+import { ListChecks, CalendarPlus, Bell, History } from "lucide-react";
 import type { NavItem } from "@/components/sidebar-content";
 import { getUnreadNotificationCount } from "@/lib/notifications";
 
@@ -15,6 +15,7 @@ export async function getStaffNav(role: string, userId: string): Promise<NavItem
   if (role === "STAFF") {
     const unread = await getUnreadNotificationCount(userId);
     nav.push({ label: "Notifications", href: "/staff/notifications", icon: <Bell />, badge: unread });
+    nav.push({ label: "Events", href: "/staff/events", icon: <History /> });
   }
 
   return nav;
