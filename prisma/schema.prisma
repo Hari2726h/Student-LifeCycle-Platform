@@ -489,14 +489,51 @@ model AlumniProfile {
   student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId       String   @unique
 
+  // A materialized projection, not a source of truth — these are only ever
+  // written by lib/alumni-career.ts's recomputeProjection(), replaying
+  // careerEvents in order. Never set directly from a form.
   currentRole     String?
   currentCompany  String?
+
   bio             String?
   mentoringOptIn  Boolean  @default(false)
   availability    String?
 
+  careerEvents    CareerEvent[]
   karpomSessions  KarpomSession[]
   createdAt       DateTime @default(now())
+}
+
+enum CareerEventSource {
+  SELF_REPORTED
+  REFERRAL
+  PLACEMENT
+}
+
+// The actual source of truth for an alumnus's career. Append-only — a
+// correction is a new event, never an edit to an old one. AlumniProfile's
+// currentCompany/currentRole/isCurrent are derived from this by replay.
+model CareerEvent {
+  id                String            @id @default(cuid())
+  alumniProfile     AlumniProfile     @relation(fields: [alumniProfileId], references: [id], onDelete: Cascade)
+  alumniProfileId   String
+
+  source            CareerEventSource
+  company           String // as entered/reported, verbatim
+  companyNormalized String // derived: case/whitespace/legal-suffix/alias-folded
+  role              String
+  startDate         DateTime
+  endDate           DateTime?
+  notes             String?
+
+  // Recomputed by the replay projection whenever this alumnus's history
+  // changes — never set directly by the form that creates the event.
+  isCurrent         Boolean           @default(false)
+
+  createdAt         DateTime          @default(now())
+
+  @@index([alumniProfileId])
+  @@index([companyNormalized, isCurrent])
 }
 
 // Karpom Karpippom: alumni tutor school-age juniors for board exams.

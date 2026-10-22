@@ -1,12 +1,26 @@
-import { GraduationCap, Heart, Check } from "lucide-react";
+import { GraduationCap, Heart, Check, Briefcase } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge } from "@/components/ui/badge";
+import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
+import { Field } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Table, Thead, Th, Tr, Td, TableScroll } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { selfReportCareerEvent } from "./actions";
+
+const SOURCE_TONE: Record<string, "accent" | "info" | "gold"> = {
+  SELF_REPORTED: "accent",
+  REFERRAL: "info",
+  PLACEMENT: "gold",
+};
+const SOURCE_LABEL: Record<string, string> = {
+  SELF_REPORTED: "Self-reported",
+  REFERRAL: "Referral",
+  PLACEMENT: "Placement",
+};
 
 export default async function PortalHome() {
   const session = await requireRole(["STUDENT", "ALUMNI"]);
@@ -20,7 +34,7 @@ export default async function PortalHome() {
       certifications: { include: { courseCatalog: true } },
       academicRecords: { orderBy: { semester: "desc" } },
       placement: true,
-      alumniProfile: { include: { karpomSessions: true } },
+      alumniProfile: { include: { karpomSessions: true, careerEvents: { orderBy: { startDate: "desc" } } } },
     },
   });
 
@@ -140,6 +154,49 @@ export default async function PortalHome() {
                     <p className="mt-0.5 font-mono text-sm tabular-nums text-ink-muted">
                       ₹{student.placement.packageInrLakhs}L
                     </p>
+                  )}
+                </CardBody>
+              </Card>
+            )}
+
+            {student.alumniProfile && (
+              <Card>
+                <CardHeader
+                  eyebrow="Current"
+                  title={student.alumniProfile.currentCompany ? `${student.alumniProfile.currentRole} at ${student.alumniProfile.currentCompany}` : "No current position on record"}
+                  description="Derived by replaying your career history below — not stored directly."
+                  action={<Briefcase className="size-4 text-ink-faint" aria-hidden />}
+                />
+                <CardBody className="space-y-4">
+                  {session.user.role === "ALUMNI" && (
+                    <form action={selfReportCareerEvent} className="grid grid-cols-1 gap-2 border-b border-border pb-4 sm:grid-cols-4">
+                      <Field label="Company" name="company" required className="sm:col-span-2" />
+                      <Field label="Role" name="role" required />
+                      <Field label="Start date" type="date" name="startDate" required />
+                      <Button type="submit" variant="secondary" size="sm" className="sm:col-span-4">
+                        Add career update
+                      </Button>
+                    </form>
+                  )}
+
+                  {student.alumniProfile.careerEvents.length === 0 ? (
+                    <p className="text-sm text-ink-faint">No career history yet.</p>
+                  ) : (
+                    <ul className="space-y-2.5">
+                      {student.alumniProfile.careerEvents.map((e) => (
+                        <li key={e.id} className="flex items-start justify-between gap-3 text-sm">
+                          <div>
+                            <p className="text-ink">
+                              {e.role} <span className="text-ink-muted">at {e.company}</span>
+                            </p>
+                            <p className="text-xs text-ink-faint">
+                              {e.startDate.toLocaleDateString()} – {e.endDate ? e.endDate.toLocaleDateString() : "present"}
+                            </p>
+                          </div>
+                          <Badge tone={SOURCE_TONE[e.source]}>{SOURCE_LABEL[e.source]}</Badge>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </CardBody>
               </Card>

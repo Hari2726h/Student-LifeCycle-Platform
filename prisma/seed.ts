@@ -8,6 +8,7 @@ import { PrismaClient, Role, CollegeType, Gender, FamilySituation } from "@prism
 import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
 import { DISTRICTS, COURSES } from "../lib/constants";
+import { addCareerEvent } from "../lib/alumni-career";
 
 const prisma = new PrismaClient();
 
@@ -377,12 +378,20 @@ async function main() {
       const alumniProfile = await prisma.alumniProfile.create({
         data: {
           studentId: student.id,
-          currentRole: "Software Engineer",
-          currentCompany: "Zoho Corporation",
           bio: "Maatram alumna, now giving back by mentoring juniors through Karpom Karpippom.",
           mentoringOptIn: true,
           availability: "Weekends",
         },
+      });
+      // currentRole/currentCompany are a projection, not a fact — seed the
+      // real source of truth (a career event) and let recomputeProjection
+      // derive them, same as any live addCareerEvent() call would.
+      await addCareerEvent({
+        alumniProfileId: alumniProfile.id,
+        source: "PLACEMENT",
+        company: "Zoho Corporation",
+        role: "Software Engineer",
+        startDate: faker.date.recent({ days: 90 }),
       });
       await prisma.karpomSession.create({
         data: {
