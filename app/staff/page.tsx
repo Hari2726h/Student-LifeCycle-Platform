@@ -191,9 +191,9 @@ export default async function StaffHome({
           <section className="mt-6">
             <Card className="border-danger/30 bg-danger-soft/40">
               <CardHeader
-                eyebrow="Needs attention · a worklist, not just a report"
-                title={`At-risk students (${atRiskStudents.length})`}
-                description="Stalled 90+ days, declining GPA/attendance, or an unresolved mentor risk flag."
+                eyebrow="Mentorship · a worklist, not just a report"
+                title={`Needs follow-up (${atRiskStudents.length})`}
+                description="Enrolled students: stalled 90+ days, declining GPA/attendance, or an unresolved mentor risk flag. Distinct from admission-time deservingness — see the applicant's own record for that."
                 action={<AlertTriangle className="size-4 text-danger" aria-hidden />}
               />
               <CardBody>

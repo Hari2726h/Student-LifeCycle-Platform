@@ -4,10 +4,12 @@ export type AtRiskReason = "STALLED" | "DECLINING" | "RISK_FLAG";
 
 const STALLED_DAYS = 90;
 
-/** The at-risk dashboard's three criteria: status hasn't moved in 90+
- * days, the last two academic records show GPA or attendance dropping,
- * or a mentor has an unresolved risk flag open. A student can match more
- * than one — each reason is surfaced, not just the first one found. */
+/** The "Needs follow-up" dashboard's three criteria, for already-enrolled
+ * students: status hasn't moved in 90+ days, the last two academic records
+ * show GPA or attendance dropping, or a mentor has an unresolved risk flag
+ * open. A student can match more than one — each reason is surfaced, not
+ * just the first one found. This is a retention concern, distinct from the
+ * admission-time deservingness assessment in lib/deservingness.ts. */
 export async function getAtRiskStudents() {
   const stalledCutoff = new Date();
   stalledCutoff.setDate(stalledCutoff.getDate() - STALLED_DAYS);
