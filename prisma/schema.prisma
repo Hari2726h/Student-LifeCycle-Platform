@@ -205,6 +205,14 @@ model Applicant {
 
   status           ApplicationStatus @default(DRAFT)
 
+  // Set once, at creation, to whichever cycle is open that day — stays
+  // fixed even if the cycle closes before the applicant finishes (an
+  // already-started draft is grandfathered in; only *new* drafts require
+  // an open cycle). Nullable only because applicants that predate cycles
+  // existing need somewhere to land.
+  cycle            AdmissionCycle? @relation(fields: [cycleId], references: [id])
+  cycleId          String?
+
   volunteer        User?    @relation("AssignedVolunteer", fields: [volunteerId], references: [id])
   volunteerId      String?
 
@@ -220,6 +228,20 @@ model Applicant {
 
   @@index([status])
   @@index([district])
+  @@index([cycleId])
+}
+
+// Each year is a separate admission cycle — applications are scoped to
+// one, new drafts can only start while it's open, and cycles are the
+// basis for year-over-year comparison on /staff/cycles.
+model AdmissionCycle {
+  id         String      @id @default(cuid())
+  year       Int         @unique
+  opensAt    DateTime
+  closesAt   DateTime
+
+  applicants Applicant[]
+  createdAt  DateTime    @default(now())
 }
 
 // Deliberately isolated from Applicant so operational dashboards (pipeline

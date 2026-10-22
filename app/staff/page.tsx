@@ -12,9 +12,10 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatStrip } from "@/components/ui/stat-strip";
 import { Table, Thead, Th, Tr, Td, TableScroll } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Select } from "@/components/ui/input";
+import { Select, Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { ApplicationStatus } from "@prisma/client";
+import { bulkShortlist, bulkSelect, bulkReject } from "./bulk-actions";
 
 const APPLICANT_STAGE_ORDER = [
   "DRAFT",
@@ -34,7 +35,7 @@ const STUDENT_STAGE_ORDER = ["ONBOARDING", "ACTIVE", "PLACED", "ALUMNI", "WITHDR
 export default async function StaffHome({
   searchParams,
 }: {
-  searchParams: Promise<{ district?: string; collegeId?: string; status?: string }>;
+  searchParams: Promise<{ district?: string; collegeId?: string; status?: string; result?: string; error?: string }>;
 }) {
   const session = await requireRole(["STAFF", "COMMITTEE", "VOLUNTEER"]);
   const role = session.user.role;
@@ -97,6 +98,13 @@ export default async function StaffHome({
           ) : undefined
         }
       />
+
+      {filters.result && (
+        <div className="mb-4 rounded-md border border-success/30 bg-success-soft/50 px-3 py-2 text-sm text-success">
+          {decodeURIComponent(filters.result)}
+        </div>
+      )}
+      {filters.error && <p className="mb-4 text-sm text-danger">{decodeURIComponent(filters.error)}</p>}
 
       <div className="space-y-2.5">
         <StatStrip items={APPLICANT_STAGE_ORDER.map((s) => ({ label: s.replaceAll("_", " "), value: applicantCountMap[s] ?? 0 }))} />
@@ -178,13 +186,7 @@ export default async function StaffHome({
                   </Button>
                 </div>
               </form>
-              <PipelineTable
-                rows={fullPipeline}
-                empty="No applicants match these filters."
-                columns={["Name", "District", "Volunteer", "Status"]}
-                render={(a) => [a.fullName, a.district, a.volunteer?.name ?? "Unassigned", <StatusBadge key="s" value={a.status} />]}
-                hrefFor={(a) => `/staff/applicants/${a.id}`}
-              />
+              <BulkPipelineTable rows={fullPipeline} />
             </Card>
           </section>
 
@@ -287,5 +289,75 @@ function PipelineTable<T>({
         </Table>
       </TableScroll>
     </div>
+  );
+}
+
+function BulkPipelineTable({
+  rows,
+}: {
+  rows: { id: string; fullName: string; district: string; status: ApplicationStatus; volunteer: { name: string } | null }[];
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="p-5 pt-0">
+        <EmptyState icon={ListChecks} title="No applicants match these filters." />
+      </div>
+    );
+  }
+
+  return (
+    <form className="px-5 pb-5">
+      <TableScroll>
+        <Table>
+          <Thead>
+            <tr>
+              <Th className="w-8" />
+              <Th>Name</Th>
+              <Th>District</Th>
+              <Th>Volunteer</Th>
+              <Th>Status</Th>
+            </tr>
+          </Thead>
+          <tbody>
+            {rows.map((a) => (
+              <Tr key={a.id}>
+                <Td>
+                  <input type="checkbox" name="applicantIds" value={a.id} className="size-4 rounded border-border accent-accent" />
+                </Td>
+                <Td>
+                  <Link href={`/staff/applicants/${a.id}`} className="font-medium text-accent hover:text-accent-strong">
+                    {a.fullName}
+                  </Link>
+                </Td>
+                <Td>{a.district}</Td>
+                <Td>{a.volunteer?.name ?? "Unassigned"}</Td>
+                <Td>
+                  <StatusBadge value={a.status} />
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </TableScroll>
+
+      <div className="mt-4 space-y-3 border-t border-border pt-4">
+        <Field label="Reason (required for any bulk action below)" name="reason" placeholder="e.g. Below cutoff for this cycle's shortlist" required />
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" formAction={bulkShortlist} variant="secondary" size="sm">
+            Shortlist selected
+          </Button>
+          <Button type="submit" formAction={bulkSelect} variant="primary" size="sm">
+            Select selected
+          </Button>
+          <Button type="submit" formAction={bulkReject} variant="danger" size="sm">
+            Reject selected
+          </Button>
+        </div>
+        <p className="text-xs text-ink-faint">
+          Shortlist works from submitted/verified; Select works from shortlisted/interviewed; Reject works from any
+          non-final status. Applicants in the wrong state for the chosen action are skipped, not failed.
+        </p>
+      </div>
+    </form>
   );
 }

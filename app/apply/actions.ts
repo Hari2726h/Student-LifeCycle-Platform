@@ -9,6 +9,7 @@ import { requestOtp } from "@/lib/otp";
 import { saveUploadedFile } from "@/lib/uploads";
 import { assignVolunteer } from "@/lib/applicants";
 import { appendEvent } from "@/lib/events";
+import { getOpenCycle, isCycleOpen } from "@/lib/cycles";
 import { LANG_COOKIE, type Lang } from "@/lib/i18n";
 import { Role, type DocumentKind } from "@prisma/client";
 
@@ -79,6 +80,18 @@ export async function saveStep1(formData: FormData) {
     await prisma.user.update({ where: { id: user.id }, data: { name: data.fullName } });
   }
 
+  // Only a brand-new application needs an open cycle — an existing draft
+  // keeps whatever cycle it was born into, even if that's since closed.
+  const existing = await prisma.applicant.findUnique({ where: { userId: user.id }, select: { id: true } });
+  let cycleId: string | undefined;
+  if (!existing) {
+    const openCycle = await getOpenCycle();
+    if (!openCycle) {
+      redirect("/apply?step=1&error=Applications+are+closed+for+this+year.+Please+check+back+for+the+next+cycle.");
+    }
+    cycleId = openCycle.id;
+  }
+
   await prisma.applicant.upsert({
     where: { userId: user.id },
     create: {
@@ -89,6 +102,7 @@ export async function saveStep1(formData: FormData) {
       district: data.district,
       phone: account.phone ?? "",
       email: data.email || null,
+      cycleId,
     },
     update: {
       fullName: data.fullName,
@@ -203,6 +217,10 @@ export async function submitApplicationAction() {
     redirect("/apply?step=5&error=Please+complete+every+step+before+submitting");
   }
 
+  if (!(await isCycleOpen(applicant.cycleId))) {
+    redirect("/apply?step=5&error=This+admission+cycle+has+closed.+Your+draft+is+saved+but+can%27t+be+submitted%E2%80%94please+contact+Maatram+staff.");
+  }
+
   const volunteerId = await assignVolunteer(applicant.district, applicant.sensitiveInfo?.pincode);
   const nextStatus = volunteerId ? "UNDER_VERIFICATION" : "SUBMITTED";
 
@@ -269,6 +287,16 @@ export async function createAssistedApplication(formData: FormData) {
     },
   });
 
+  const existingApplicant = await prisma.applicant.findUnique({ where: { userId: familyUser.id }, select: { id: true } });
+  let cycleId: string | undefined;
+  if (!existingApplicant) {
+    const openCycle = await getOpenCycle();
+    if (!openCycle) {
+      redirect("/apply/assist?error=Applications+are+closed+for+this+year%E2%80%94no+new+application+can+be+started.");
+    }
+    cycleId = openCycle.id;
+  }
+
   const applicant = await prisma.applicant.upsert({
     where: { userId: familyUser.id },
     create: {
@@ -284,6 +312,7 @@ export async function createAssistedApplication(formData: FormData) {
       preferredCollegeId: data.preferredCollegeId || null,
       volunteerId: volunteer.id,
       status: "UNDER_VERIFICATION",
+      cycleId,
     },
     update: {
       fullName: data.fullName,
