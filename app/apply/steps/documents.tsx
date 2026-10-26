@@ -53,8 +53,6 @@ export function DocumentsStep({
       kind,
       storageKey: urlResult.storageKey,
       fileName: file.name,
-      mimeType,
-      sizeBytes: file.size,
     });
     if (!confirmResult.ok) {
       setErrors((prev) => ({ ...prev, [kind]: confirmResult.error }));

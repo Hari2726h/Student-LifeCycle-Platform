@@ -3,6 +3,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  DeleteObjectCommand,
   CreateBucketCommand,
   HeadBucketCommand,
 } from "@aws-sdk/client-s3";
@@ -14,6 +15,15 @@ import path from "path";
 // real S3/MinIO/whatever in production via the same env vars. Nothing
 // calling into this module needs to know which backend is behind it.
 const BUCKET = process.env.S3_BUCKET!;
+
+/** Thrown only for conditions a user can actually do something about (file
+ * too big, wrong type). Anything else — the storage backend being
+ * unreachable, a malformed key, whatever — is a real outage/bug, not
+ * "bad input", and its raw message (connection strings, ports, internal
+ * paths) must never reach the browser. Callers should show
+ * UploadValidationError's message as-is, and anything else as a generic
+ * "try again" — see app/apply/actions.ts. */
+export class UploadValidationError extends Error {}
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT,
@@ -67,7 +77,7 @@ export async function createPresignedUploadUrl(input: {
   sizeBytes: number;
 }) {
   const error = validateUpload(input.mimeType, input.sizeBytes);
-  if (error) throw new Error(error);
+  if (error) throw new UploadValidationError(error);
 
   await ensureBucket();
   const storageKey = buildKey(input.applicantId, input.fileName);
@@ -79,21 +89,33 @@ export async function createPresignedUploadUrl(input: {
   return { storageKey, uploadUrl };
 }
 
-/** Called after the client's direct PUT succeeds — confirms the object is
- * really there and really the size that was declared, so a client can't
- * claim a smaller/larger file than it actually sent. */
-export async function confirmUpload(storageKey: string, expectedSizeBytes: number) {
+/** Called after the client's direct PUT succeeds. The presigned URL only
+ * constrains the *request* for a URL — nothing stops a client that isn't
+ * going through our own UI from requesting a URL for a small, allowed file
+ * and then PUTting something completely different (bigger, wrong type).
+ * So this re-validates against what's actually sitting in storage, the one
+ * thing a client can't lie about — not against whatever the client claims
+ * here — and deletes the object if it fails. Returns the real metadata so
+ * callers store what's true, not what was asserted. */
+export async function confirmUpload(storageKey: string) {
   const head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: storageKey }));
-  if (head.ContentLength !== expectedSizeBytes) {
-    throw new Error("Uploaded file size doesn't match — please try again");
+  const sizeBytes = head.ContentLength ?? 0;
+  const mimeType = head.ContentType ?? "application/octet-stream";
+
+  const error = validateUpload(mimeType, sizeBytes);
+  if (error) {
+    await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: storageKey }));
+    throw new UploadValidationError(error);
   }
+
+  return { sizeBytes, mimeType };
 }
 
 /** Server already holds the bytes (e.g. the volunteer-assisted form posts
  * the whole application in one go) — skip the presigned round-trip. */
 export async function putObjectDirect(applicantId: string, file: File) {
   const error = validateUpload(file.type || "application/octet-stream", file.size);
-  if (error) throw new Error(error);
+  if (error) throw new UploadValidationError(error);
 
   await ensureBucket();
   const storageKey = buildKey(applicantId, file.name);
@@ -127,4 +149,15 @@ export async function createPresignedDownloadUrl(storageKey: string, fileName: s
     }),
     { expiresIn: 60 },
   );
+}
+
+/** The one place that decides what an upload failure gets to say to the
+ * user. A validation failure is safe to show verbatim — it's one of our
+ * own messages. Anything else (storage unreachable, a bad key, whatever)
+ * is logged for us to look at and shown as a generic, calm message — never
+ * the raw error, which can contain hosts/ports/paths. */
+export function describeUploadError(err: unknown): string {
+  if (err instanceof UploadValidationError) return err.message;
+  console.error("Upload failed:", err);
+  return "Something went wrong with the upload. Please try again in a moment.";
 }

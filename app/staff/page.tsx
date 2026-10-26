@@ -82,6 +82,18 @@ export default async function StaffHome({
 
   const atRiskStudents = role === "STAFF" ? await getAtRiskStudents() : [];
 
+  // Selecting an applicant (bulk or individual) only flips their status —
+  // it doesn't pick a college/mentor, so the linked Student record can't be
+  // created automatically. Surfaced here so an accepted applicant can never
+  // silently sit unlinked just because nobody happened to click into them.
+  const needsOnboarding =
+    role === "STAFF"
+      ? await prisma.applicant.findMany({
+          where: { status: "ACCEPTED", student: null },
+          orderBy: { updatedAt: "asc" },
+        })
+      : [];
+
   const nav = await getStaffNav(role, session.user.id);
 
   return (
@@ -229,6 +241,31 @@ export default async function StaffHome({
               </CardBody>
             </Card>
           </section>
+
+          {needsOnboarding.length > 0 && (
+            <section className="mt-6">
+              <Card className="border-warning/30 bg-warning-soft/40">
+                <CardHeader
+                  eyebrow="Admission · a worklist, not just a status"
+                  title={`Needs onboarding (${needsOnboarding.length})`}
+                  description="Accepted, but not yet linked to a student record — pick their college and mentor to finish."
+                  action={<UserPlus className="size-4 text-warning" aria-hidden />}
+                />
+                <CardBody>
+                  <ul className="space-y-2">
+                    {needsOnboarding.map((a) => (
+                      <li key={a.id} className="flex items-center justify-between rounded-md border border-border bg-surface p-3">
+                        <Link href={`/staff/applicants/${a.id}`} className="text-sm font-medium text-accent hover:text-accent-strong">
+                          {a.fullName}
+                        </Link>
+                        <span className="text-xs text-ink-faint">{a.district}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardBody>
+              </Card>
+            </section>
+          )}
         </>
       )}
     </AppShell>

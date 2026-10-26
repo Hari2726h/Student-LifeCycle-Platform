@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { requestOtp } from "@/lib/otp";
-import { createPresignedUploadUrl, confirmUpload, putObjectDirect } from "@/lib/storage";
+import { createPresignedUploadUrl, confirmUpload, putObjectDirect, describeUploadError } from "@/lib/storage";
 import { assignVolunteer } from "@/lib/applicants";
 import { appendEvent } from "@/lib/events";
 import { getOpenCycle, isCycleOpen } from "@/lib/cycles";
@@ -196,7 +196,7 @@ export async function requestDocumentUploadUrlAction(input: {
     const result = await createPresignedUploadUrl({ applicantId: applicant.id, ...input });
     return { ok: true, ...result };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Upload failed" };
+    return { ok: false, error: describeUploadError(err) };
   }
 }
 
@@ -204,16 +204,19 @@ export async function confirmDocumentUploadAction(input: {
   kind: DocumentKind;
   storageKey: string;
   fileName: string;
-  mimeType: string;
-  sizeBytes: number;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const user = await requireApplicant();
   const applicant = await prisma.applicant.findUniqueOrThrow({ where: { userId: user.id } });
 
+  // mimeType/sizeBytes come from the object actually sitting in storage,
+  // not from whatever the client claims — a client that isn't going
+  // through our own UI could otherwise request a URL for a small, allowed
+  // file and then upload something completely different.
+  let real: { sizeBytes: number; mimeType: string };
   try {
-    await confirmUpload(input.storageKey, input.sizeBytes);
+    real = await confirmUpload(input.storageKey);
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Upload failed" };
+    return { ok: false, error: describeUploadError(err) };
   }
 
   // One document per kind — re-uploading replaces the previous file's record.
@@ -223,8 +226,8 @@ export async function confirmDocumentUploadAction(input: {
       kind: input.kind,
       storageKey: input.storageKey,
       fileName: input.fileName,
-      mimeType: input.mimeType,
-      sizeBytes: input.sizeBytes,
+      mimeType: real.mimeType,
+      sizeBytes: real.sizeBytes,
       applicantId: applicant.id,
       uploadedById: user.id,
     },
@@ -388,7 +391,7 @@ export async function createAssistedApplication(formData: FormData) {
     try {
       saved = await putObjectDirect(applicant.id, idProof);
     } catch (err) {
-      redirect(`/apply/assist?error=${encodeURIComponent(err instanceof Error ? err.message : "Upload failed")}`);
+      redirect(`/apply/assist?error=${encodeURIComponent(describeUploadError(err))}`);
     }
     await prisma.document.deleteMany({ where: { applicantId: applicant.id, kind: "ID_PROOF" } });
     await prisma.document.create({

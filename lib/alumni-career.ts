@@ -69,7 +69,11 @@ export async function addCareerEvent(input: AddCareerEventInput) {
 export async function recomputeProjection(tx: Prisma.TransactionClient, alumniProfileId: string) {
   const events = await tx.careerEvent.findMany({
     where: { alumniProfileId },
-    orderBy: { startDate: "asc" },
+    // A secondary key makes same-day career changes order deterministically
+    // — without one, two events sharing a startDate have no guaranteed tie-
+    // break, so replaying the same history twice could silently pick a
+    // different one as "current" each time.
+    orderBy: [{ startDate: "asc" }, { createdAt: "asc" }],
   });
 
   const now = new Date();

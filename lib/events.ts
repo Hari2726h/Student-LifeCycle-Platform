@@ -10,3 +10,14 @@ export async function appendEvent(
 ) {
   return tx.event.create({ data: args });
 }
+
+/** Guards a status-change event against two real, ordinary ways to double
+ * -fire it: a double-submitted form (network retry, double-click), and a
+ * repeatable action that doesn't always actually move the record — e.g.
+ * multiple interview panelists each submitting a scorecard, where only the
+ * first one actually transitions the applicant's status. Call this instead
+ * of `appendEvent` directly whenever the "before" state was read earlier
+ * than the transaction that writes the "after" state. */
+export function isRealStatusChange(fromStatus: string, toStatus: string) {
+  return fromStatus !== toStatus;
+}

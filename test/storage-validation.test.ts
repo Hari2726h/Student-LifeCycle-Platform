@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { validateUpload } from "@/lib/storage";
+import { describe, it, expect, vi } from "vitest";
+import { validateUpload, describeUploadError, UploadValidationError } from "@/lib/storage";
 
 const MB = 1024 * 1024;
 
@@ -37,5 +37,30 @@ describe("validateUpload", () => {
     // Guards against a prefix-match bug like `.startsWith("image/")` being
     // satisfied by something that isn't actually one of the two allowed kinds.
     expect(validateUpload("application/pdfx", 1024)).not.toBeNull();
+  });
+});
+
+describe("describeUploadError — the outage/bad-input boundary", () => {
+  it("passes a validation error through verbatim — it's our own safe message", () => {
+    expect(describeUploadError(new UploadValidationError("File must be under 8MB"))).toBe("File must be under 8MB");
+  });
+
+  it("never exposes a raw infrastructure error (connection, host, port) to the user", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const raw = new Error("connect ECONNREFUSED 127.0.0.1:9090");
+    const shown = describeUploadError(raw);
+    expect(shown).not.toContain("ECONNREFUSED");
+    expect(shown).not.toContain("127.0.0.1");
+    expect(shown).toBe("Something went wrong with the upload. Please try again in a moment.");
+    expect(spy).toHaveBeenCalledWith("Upload failed:", raw); // still logged for us to debug
+    spy.mockRestore();
+  });
+
+  it("falls back to the same generic message for a non-Error throw", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(describeUploadError("some string someone threw")).toBe(
+      "Something went wrong with the upload. Please try again in a moment.",
+    );
+    spy.mockRestore();
   });
 });
