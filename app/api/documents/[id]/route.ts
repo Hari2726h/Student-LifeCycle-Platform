@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { readUploadedFile } from "@/lib/uploads";
+import { createPresignedDownloadUrl } from "@/lib/storage";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -20,12 +20,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const allowed = role === "STAFF" || role === "COMMITTEE" || isAssignedVolunteer || isOwner;
   if (!allowed) return new NextResponse("Forbidden", { status: 403 });
 
-  const buffer = await readUploadedFile(doc.storageKey);
-  return new NextResponse(buffer as unknown as BodyInit, {
-    headers: {
-      "Content-Type": doc.mimeType,
-      "Content-Disposition": `inline; filename="${doc.fileName.replace(/"/g, "")}"`,
-      "Cache-Control": "private, no-store",
-    },
-  });
+  // Access control stays here; the actual bytes are served directly by
+  // object storage via a short-lived signed URL, not proxied through us.
+  const url = await createPresignedDownloadUrl(doc.storageKey, doc.fileName);
+  return NextResponse.redirect(url, { status: 307, headers: { "Cache-Control": "private, no-store" } });
 }

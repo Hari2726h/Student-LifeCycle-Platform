@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { requestOtp } from "@/lib/otp";
-import { saveUploadedFile } from "@/lib/uploads";
+import { createPresignedUploadUrl, confirmUpload, putObjectDirect } from "@/lib/storage";
 import { assignVolunteer } from "@/lib/applicants";
 import { appendEvent } from "@/lib/events";
 import { getOpenCycle, isCycleOpen } from "@/lib/cycles";
@@ -179,28 +179,57 @@ export async function saveStep3(formData: FormData) {
   redirect("/apply?step=4");
 }
 
-export async function uploadDocumentAction(formData: FormData) {
+// The Documents step is a client component so it can PUT bytes straight to
+// object storage — these two actions only ever see metadata, never the file.
+// They return a result object rather than throwing: a thrown error from a
+// server action called as a plain function gets redacted to a generic
+// digest in production builds, which would hide our friendly messages
+// ("File must be under 8MB") from the user.
+export async function requestDocumentUploadUrlAction(input: {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}): Promise<{ ok: true; storageKey: string; uploadUrl: string } | { ok: false; error: string }> {
+  const user = await requireApplicant();
+  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { userId: user.id } });
+  try {
+    const result = await createPresignedUploadUrl({ applicantId: applicant.id, ...input });
+    return { ok: true, ...result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Upload failed" };
+  }
+}
+
+export async function confirmDocumentUploadAction(input: {
+  kind: DocumentKind;
+  storageKey: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
   const user = await requireApplicant();
   const applicant = await prisma.applicant.findUniqueOrThrow({ where: { userId: user.id } });
 
-  const kind = formData.get("kind") as DocumentKind | null;
-  const file = formData.get("file") as File | null;
-  if (!kind || !file || file.size === 0) {
-    redirect("/apply?step=4&error=Choose+a+file+to+upload");
+  try {
+    await confirmUpload(input.storageKey, input.sizeBytes);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Upload failed" };
   }
-  if (file.size > 8 * 1024 * 1024) {
-    redirect("/apply?step=4&error=File+must+be+under+8MB");
-  }
-
-  const saved = await saveUploadedFile(applicant.id, file);
 
   // One document per kind — re-uploading replaces the previous file's record.
-  await prisma.document.deleteMany({ where: { applicantId: applicant.id, kind } });
+  await prisma.document.deleteMany({ where: { applicantId: applicant.id, kind: input.kind } });
   await prisma.document.create({
-    data: { ...saved, kind, applicantId: applicant.id, uploadedById: user.id },
+    data: {
+      kind: input.kind,
+      storageKey: input.storageKey,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      sizeBytes: input.sizeBytes,
+      applicantId: applicant.id,
+      uploadedById: user.id,
+    },
   });
-
-  redirect("/apply?step=4");
+  return { ok: true };
 }
 
 export async function submitApplicationAction() {
@@ -355,7 +384,12 @@ export async function createAssistedApplication(formData: FormData) {
 
   const idProof = formData.get("idProof") as File | null;
   if (idProof && idProof.size > 0) {
-    const saved = await saveUploadedFile(applicant.id, idProof);
+    let saved: Awaited<ReturnType<typeof putObjectDirect>>;
+    try {
+      saved = await putObjectDirect(applicant.id, idProof);
+    } catch (err) {
+      redirect(`/apply/assist?error=${encodeURIComponent(err instanceof Error ? err.message : "Upload failed")}`);
+    }
     await prisma.document.deleteMany({ where: { applicantId: applicant.id, kind: "ID_PROOF" } });
     await prisma.document.create({
       data: { ...saved, kind: "ID_PROOF", applicantId: applicant.id, uploadedById: volunteer.id },

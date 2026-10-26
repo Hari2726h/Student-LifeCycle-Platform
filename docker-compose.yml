@@ -12,5 +12,25 @@ services:
     volumes:
       - maatram_pgdata:/var/lib/postgresql/data
 
+  # S3-compatible object storage for documents. MinIO's images were pulled
+  # from Docker Hub/Quay and LocalStack now requires a license token even
+  # for S3, so this uses Adobe's S3Mock (Apache-2.0, no license gate) —
+  # same S3 API, same AWS SDK code either way. The bucket is also created
+  # lazily by the app (lib/storage.ts) as a defense-in-depth belt-and-braces,
+  # on top of the INITIAL_BUCKETS env var below.
+  storage:
+    image: adobe/s3mock:latest
+    container_name: maatram_storage
+    restart: unless-stopped
+    environment:
+      initialBuckets: maatram-documents
+      retainFilesOnExit: "true"
+      root: /data
+    ports:
+      - "9090:9090"
+    volumes:
+      - maatram_storage_data:/data
+
 volumes:
   maatram_pgdata:
+  maatram_storage_data:
