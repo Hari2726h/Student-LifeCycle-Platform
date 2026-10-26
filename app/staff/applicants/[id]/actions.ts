@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
-import { appendEvent } from "@/lib/events";
+import { appendEvent, isRealStatusChange } from "@/lib/events";
 
 async function requireRole(roles: string[]) {
   const session = await auth();
@@ -56,12 +56,17 @@ export async function submitVerification(applicantId: string, formData: FormData
       update: { visitDate: new Date(), ...data },
     });
     await tx.applicant.update({ where: { id: applicantId }, data: { status: nextStatus } });
-    await appendEvent(tx, {
-      aggregateType: "Applicant",
-      aggregateId: applicantId,
-      type: "APPLICANT_STATUS_CHANGED",
-      payload: { fromStatus: applicant.status, toStatus: nextStatus, actorId: user.id, action: "VERIFICATION_SUBMITTED", decision: data.decision },
-    });
+    // Re-editing an already-submitted verification form (same decision)
+    // must not append a second identical event — only a real transition is
+    // "an important change" worth logging.
+    if (isRealStatusChange(applicant.status, nextStatus)) {
+      await appendEvent(tx, {
+        aggregateType: "Applicant",
+        aggregateId: applicantId,
+        type: "APPLICANT_STATUS_CHANGED",
+        payload: { fromStatus: applicant.status, toStatus: nextStatus, actorId: user.id, action: "VERIFICATION_SUBMITTED", decision: data.decision },
+      });
+    }
   });
 
   redirect(`/staff/applicants/${applicantId}`);
@@ -90,6 +95,12 @@ export async function scheduleInterview(applicantId: string, formData: FormData)
   }
 
   const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
+  const existingInterview = await prisma.interviewRecord.findUnique({ where: { applicantId } });
+  // A genuine reschedule to a different slot is still worth logging even if
+  // status doesn't change; a resubmission of the exact same slot (a
+  // double-click race — the UI has no path to call this once already
+  // scheduled) is not.
+  const isMeaningfulChange = !existingInterview || existingInterview.slotId !== slot.id;
 
   await prisma.$transaction(async (tx) => {
     await tx.interviewRecord.upsert({
@@ -98,12 +109,14 @@ export async function scheduleInterview(applicantId: string, formData: FormData)
       update: { slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
     });
     await tx.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEW_SCHEDULED" } });
-    await appendEvent(tx, {
-      aggregateType: "Applicant",
-      aggregateId: applicantId,
-      type: "APPLICANT_STATUS_CHANGED",
-      payload: { fromStatus: applicant.status, toStatus: "INTERVIEW_SCHEDULED", actorId: user.id, action: "INTERVIEW_SCHEDULED", slotId: slot.id },
-    });
+    if (isMeaningfulChange) {
+      await appendEvent(tx, {
+        aggregateType: "Applicant",
+        aggregateId: applicantId,
+        type: "APPLICANT_STATUS_CHANGED",
+        payload: { fromStatus: applicant.status, toStatus: "INTERVIEW_SCHEDULED", actorId: user.id, action: "INTERVIEW_SCHEDULED", slotId: slot.id },
+      });
+    }
   });
 
   redirect(`/staff/applicants/${applicantId}`);
@@ -145,12 +158,18 @@ export async function submitScore(applicantId: string, formData: FormData) {
       update: { ...data },
     });
     await tx.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEWED" } });
-    await appendEvent(tx, {
-      aggregateType: "Applicant",
-      aggregateId: applicantId,
-      type: "APPLICANT_STATUS_CHANGED",
-      payload: { fromStatus: applicant.status, toStatus: "INTERVIEWED", actorId: user.id, action: "SCORE_SUBMITTED" },
-    });
+    // Only the panelist whose score first moves the applicant into
+    // INTERVIEWED causes a real transition — every other panelist scoring
+    // the same interview (or anyone updating their own score) must not
+    // append another identical "status changed" event.
+    if (isRealStatusChange(applicant.status, "INTERVIEWED")) {
+      await appendEvent(tx, {
+        aggregateType: "Applicant",
+        aggregateId: applicantId,
+        type: "APPLICANT_STATUS_CHANGED",
+        payload: { fromStatus: applicant.status, toStatus: "INTERVIEWED", actorId: user.id, action: "SCORE_SUBMITTED" },
+      });
+    }
   });
 
   redirect(`/staff/applicants/${applicantId}`);

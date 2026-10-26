@@ -57,6 +57,14 @@ Sign in as `mentor1@maatram.org` → pick any mentee → **Students**
 
 ## 3. Alumni career queries — source-tagged history, company merging
 
+New alumni enter the tracker through **Students** → pick an ACTIVE/PLACED
+student → **Mark as alumnus** (`app/staff/students/[id]/actions.ts`).
+Company/role there are optional — fill them in and it seeds that
+placement as the student's first `CareerEvent` automatically; leave them
+blank and the new alumnus can self-report their career later from
+`/portal` instead. This is the only path that creates an `AlumniProfile` —
+without it, "alumni" would only ever exist as fabricated seed data.
+
 Sign in as `staff@maatram.org` → **Alumni** (`/staff/alumni`).
 
 1. Search **Company** for `Zoho`. Note the matches.

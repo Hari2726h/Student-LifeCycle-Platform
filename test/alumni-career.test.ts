@@ -129,4 +129,46 @@ describe("addCareerEvent / recomputeProjection (replay-derived alumni profile)",
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("CAREER_EVENT_ADDED");
   });
+
+  it("breaks a same-startDate tie deterministically, so replaying twice never flips the answer", async () => {
+    const { alumniProfile, cleanup } = await createAlumniFixture();
+    cleanupFns.push(cleanup);
+
+    const sameDay = new Date("2021-03-01");
+    // Two open-ended roles reported with the exact same startDate — without
+    // a secondary sort key, which one counts as "current" is undefined.
+    await prisma.careerEvent.create({
+      data: {
+        alumniProfileId: alumniProfile.id,
+        source: "SELF_REPORTED",
+        company: "First Entered",
+        companyNormalized: "first entered",
+        role: "Role A",
+        startDate: sameDay,
+        createdAt: new Date("2021-03-01T10:00:00Z"),
+      },
+    });
+    await prisma.careerEvent.create({
+      data: {
+        alumniProfileId: alumniProfile.id,
+        source: "SELF_REPORTED",
+        company: "Entered Later",
+        companyNormalized: "entered later",
+        role: "Role B",
+        startDate: sameDay,
+        createdAt: new Date("2021-03-01T10:05:00Z"),
+      },
+    });
+
+    await prisma.$transaction((tx) => recomputeProjection(tx, alumniProfile.id));
+    const first = await prisma.alumniProfile.findUniqueOrThrow({ where: { id: alumniProfile.id } });
+
+    // Recompute again — a real replay, not a cached answer — and confirm
+    // it's stable, not just "happened to agree once".
+    await prisma.$transaction((tx) => recomputeProjection(tx, alumniProfile.id));
+    const second = await prisma.alumniProfile.findUniqueOrThrow({ where: { id: alumniProfile.id } });
+
+    expect(first.currentCompany).toBe("Entered Later"); // later createdAt wins the tie
+    expect(second.currentCompany).toBe(first.currentCompany);
+  });
 });
