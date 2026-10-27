@@ -42,16 +42,17 @@ Sign in as `mentor1@maatram.org` → pick any mentee → **Students**
    This appends a `RISK_FLAG_LOGGED` event in the *same transaction* as the
    mentor-log row (`app/mentor/actions.ts`) — the event can never exist
    without the write it describes, and vice versa.
-2. Immediately go to `/staff/events` and click **Process new events**.
+2. Go straight to `/staff/events` and click **Process new events**.
    It reports **processed 0 events** — not because nothing happened, but
-   because the event is still inside the worker's 2-second *safety-lag*
-   window (`lib/workers/engine.ts`). The cursor is `sequence`, not a
+   because the event is still inside the worker's 15-second *safety-lag*
+   window (`lib/workers/engine.ts`; long enough to click through this by
+   hand without racing the clock). The cursor is `sequence`, not a
    timestamp, specifically because two concurrent transactions can grab
    sequence numbers 5 and 6 and commit in either order; the lag gives a
    slower, lower-sequence transaction time to land before a worker treats
    anything newer as "safe," so a worker can never race past an
    in-flight commit and silently skip it once its bookmark advances.
-3. Wait ~3 seconds and click **Process new events** again — now it
+3. Wait ~15 seconds and click **Process new events** again — now it
    reports **processed 1 event**, and the mentee shows up on the staff
    dashboard's "Needs follow-up" list with the risk flag.
 
@@ -99,8 +100,14 @@ Sign in as `staff@maatram.org` → **Alumni** (`/staff/alumni`).
    The banner reports how many were updated and how many were skipped —
    applicants in the wrong status for that action (e.g. already rejected)
    are *skipped, not failed* (`app/staff/bulk-actions.ts`).
-3. Repeat with **Select selected** on a shortlisted/interviewed applicant
-   — this creates the linked `Student` record once accepted.
+3. Repeat with **Select selected** on a shortlisted/interviewed applicant.
+   Bulk selection only flips status to `ACCEPTED` — it doesn't know which
+   college or mentor to assign, so it can't create the `Student` record by
+   itself. The dashboard's **Needs onboarding** worklist (`app/staff/page.tsx`)
+   exists specifically so an accepted applicant is never silently forgotten:
+   open their applicant detail page and the **Create the student record**
+   form appears automatically (pre-filled from their preferred college/course)
+   — one submit creates the linked `Student` row.
 4. **Audit trail**: open that applicant's detail page
    (`/staff/applicants/[id]`) → **History**. Every status change is listed
    chronologically with who did it, the from/to status, and the reason —

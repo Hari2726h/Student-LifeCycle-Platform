@@ -1,7 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import type { Event } from "@prisma/client";
 
-const DEFAULT_SAFETY_LAG_MS = 2000;
+// Long enough that a person demoing this by hand — submit a check-in, switch
+// tabs, click "Process new events" — can comfortably see the "not yet safe"
+// result before it flips, not just a theoretical race window.
+const DEFAULT_SAFETY_LAG_MS = 15_000;
 
 /**
  * The shared replay loop every worker runs on. Three things make this safe
