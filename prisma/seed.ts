@@ -79,6 +79,19 @@ async function main() {
     prisma.courseCatalog.create({ data: { name: "Employability Bootcamp", issuer: "Maatram Centre of Excellence", category: "Soft Skills" } }),
   ]);
 
+  // Covers the whole current year so a fresh clone can always start a new
+  // application on day one — computed from the real clock, not hardcoded,
+  // so this never silently goes stale on someone else's machine.
+  const currentYear = new Date().getFullYear();
+  const admissionCycle = await prisma.admissionCycle.create({
+    data: {
+      year: currentYear,
+      opensAt: new Date(`${currentYear}-01-01T00:00:00.000Z`),
+      closesAt: new Date(`${currentYear}-12-31T23:59:59.999Z`),
+    },
+  });
+  console.log(`✔ Admission cycle ${currentYear} created (open now)`);
+
   // ── Operational accounts (one per role, demo-ready) ─────────────────
   await createUser({ name: "Lakshmi Narayanan", email: "staff@maatram.org", role: Role.STAFF });
   const committee = await createUser({ name: "Dr. Suresh Babu", email: "committee@maatram.org", role: Role.COMMITTEE });
@@ -139,6 +152,7 @@ async function main() {
         courseInterest: randomFrom(COURSES),
         preferredCollegeId: randomFrom(colleges).id,
         status: "SUBMITTED",
+        cycleId: admissionCycle.id,
       },
     });
 
