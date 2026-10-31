@@ -44,8 +44,9 @@ export async function requestOtpAction(rawPhone: string) {
   if (!parsed.success) {
     return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid phone number" };
   }
-  const { code } = await requestOtp(parsed.data);
-  return { ok: true as const, devCode: code, phone: parsed.data };
+  const result = await requestOtp(parsed.data);
+  if (!result.ok) return { ok: false as const, error: result.error };
+  return { ok: true as const, devCode: result.code, phone: parsed.data };
 }
 
 const personalSchema = z.object({

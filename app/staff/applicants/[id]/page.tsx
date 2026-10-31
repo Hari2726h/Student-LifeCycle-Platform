@@ -2,7 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import { AlertTriangle, Download, FileWarning, History } from "lucide-react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
+import { getPersonTimeline, describePersonTimelineEvent } from "@/lib/person-timeline";
+import type { Event } from "@prisma/client";
 import { findPossibleDuplicates } from "@/lib/applicants";
 import { getOpenSlots } from "@/lib/interview-slots";
 import { suggestMentors } from "@/lib/mentor-matching";
@@ -88,17 +89,7 @@ export default async function ApplicantDetailPage({
     : [[], []];
 
   const canViewHistory = role === "STAFF" || role === "COMMITTEE";
-  const history = canViewHistory
-    ? await prisma.event.findMany({
-        where: {
-          OR: [
-            { aggregateType: "Applicant", aggregateId: applicant.id },
-            ...(applicant.student ? [{ aggregateType: "Student", aggregateId: applicant.student.id }] : []),
-          ],
-        },
-        orderBy: { sequence: "asc" },
-      })
-    : [];
+  const history = canViewHistory ? await getPersonTimeline(applicant.id) : [];
 
   const nav = await getStaffNav(role, session.user.id);
 
@@ -557,17 +548,18 @@ function OnboardingSection({
   );
 }
 
-/** Reads straight off the Event log (lib/events.ts) rather than a
- * separate audit table — the log is already the source of truth, and this
- * is just a projection of it filtered to one applicant/student pair. */
-function HistorySection({
-  events,
-}: {
-  events: { id: string; sequence: number; type: string; payload: Prisma.JsonValue; occurredAt: Date }[];
-}) {
+/** Reads straight off the Event log rather than a separate audit table —
+ * the log is already the source of truth. Merges events from every stage
+ * this person has passed through (lib/person-timeline.ts), so this is
+ * their whole journey, not just the applicant part of it. */
+function HistorySection({ events }: { events: Event[] }) {
   return (
     <Card>
-      <CardHeader eyebrow="Audit trail" title="History" description="Every status change, in order, with who did it and why." />
+      <CardHeader
+        eyebrow="One record, whole journey"
+        title="Full timeline"
+        description="Every event across application, student life, mentoring, and career — in order, with who did it and why."
+      />
       <CardBody>
         {events.length === 0 ? (
           <p className="text-sm text-ink-faint">No recorded events yet.</p>
@@ -578,7 +570,7 @@ function HistorySection({
               return (
                 <li key={e.id} className="relative">
                   <History className="absolute -left-[22px] top-0.5 size-3.5 text-ink-faint" aria-hidden />
-                  <p className="text-sm text-ink">{describeEvent(e.type, p)}</p>
+                  <p className="text-sm text-ink">{describePersonTimelineEvent(e.type, p)}</p>
                   {typeof p.reason === "string" && p.reason && (
                     <p className="mt-0.5 text-xs text-ink-muted">Reason: {p.reason}</p>
                   )}
@@ -591,24 +583,6 @@ function HistorySection({
       </CardBody>
     </Card>
   );
-}
-
-function describeEvent(type: string, p: Record<string, unknown>): string {
-  if (type === "APPLICANT_STATUS_CHANGED") {
-    const action = p.action ? ` (${String(p.action).replaceAll("_", " ").toLowerCase()})` : "";
-    const bulk = p.bulk ? " · bulk action" : "";
-    return `Status: ${p.fromStatus ?? "—"} → ${p.toStatus}${action}${bulk}`;
-  }
-  if (type === "STUDENT_ONBOARDED") {
-    return "Onboarded as a student";
-  }
-  if (type === "MENTOR_LOG_CREATED") {
-    return "Mentor check-in logged";
-  }
-  if (type === "RISK_FLAG_LOGGED") {
-    return "Flagged for follow-up during mentor check-in";
-  }
-  return type.replaceAll("_", " ").toLowerCase();
 }
 
 const TIER_TONE = {

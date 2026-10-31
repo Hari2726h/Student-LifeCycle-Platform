@@ -1,4 +1,4 @@
-import { History, RotateCcw, PlayCircle } from "lucide-react";
+import { History, RotateCcw, PlayCircle, Activity } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { getStaffNav } from "@/lib/staff-nav";
@@ -11,6 +11,17 @@ import { Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, Thead, Th, Tr, Td, TableScroll } from "@/components/ui/table";
 import { processNewEvents, replayFromStart, replayFromTimestamp } from "./actions";
+import { EventTicker } from "./event-ticker";
+
+function timeAgo(date: Date) {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
 export default async function EventsPage({
   searchParams,
@@ -25,6 +36,14 @@ export default async function EventsPage({
     prisma.replayBookmark.findUnique({ where: { workerName: RISK_FLAG_WORKER_NAME } }),
     prisma.notification.count({ where: { type: "RISK_FLAG" } }),
   ]);
+
+  const lastSequence = bookmark?.lastSequence ?? 0;
+  const [pendingCount, latest, lastProcessedEvent] = await Promise.all([
+    prisma.event.count({ where: { type: "RISK_FLAG_LOGGED", sequence: { gt: lastSequence } } }),
+    prisma.event.aggregate({ _max: { sequence: true } }),
+    lastSequence > 0 ? prisma.event.findUnique({ where: { sequence: lastSequence } }) : null,
+  ]);
+  const latestSequence = latest._max.sequence ?? 0;
 
   const nav = await getStaffNav("STAFF", session.user.id);
 
@@ -46,7 +65,11 @@ export default async function EventsPage({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <Card>
-            <CardHeader eyebrow="Latest 50" title="Event stream" />
+            <CardHeader
+              eyebrow="Latest 50"
+              title="Event stream"
+              action={<EventTicker initialLatestSequence={events[0]?.sequence ?? 0} />}
+            />
             <div className="px-5 pb-5">
               <TableScroll>
                 <Table>
@@ -79,6 +102,31 @@ export default async function EventsPage({
         </div>
 
         <div className="space-y-5">
+          <Card>
+            <CardHeader
+              eyebrow="Ops"
+              title="Replay health"
+              description="Not a page that just exists — proof the pipeline is actually keeping up."
+              action={<Activity className="size-4 text-ink-faint" aria-hidden />}
+            />
+            <CardBody className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-ink-muted">Pending (risk flags)</span>
+                <span className={`font-mono tabular-nums ${pendingCount > 0 ? "text-warning" : "text-ink"}`}>{pendingCount}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-ink-muted">Bookmark lag (sequence)</span>
+                <span className="font-mono tabular-nums text-ink">
+                  {lastSequence} / {latestSequence}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-ink-muted">Last processed</span>
+                <span className="text-ink">{lastProcessedEvent ? timeAgo(lastProcessedEvent.occurredAt) : "never"}</span>
+              </div>
+            </CardBody>
+          </Card>
+
           <Card>
             <CardHeader eyebrow="Worker" title="risk-flag-notifier" action={<History className="size-4 text-ink-faint" aria-hidden />} />
             <CardBody className="space-y-3 text-sm">
