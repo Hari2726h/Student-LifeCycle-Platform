@@ -1,4 +1,4 @@
-import { CalendarRange } from "lucide-react";
+import { CalendarRange, Download } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { getCycleStats } from "@/lib/cycles";
 import { getStaffNav } from "@/lib/staff-nav";
@@ -36,7 +36,20 @@ export default async function CyclesPage({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <Card>
-            <CardHeader eyebrow="Year-over-year" title="Comparison" />
+            <CardHeader
+              eyebrow="Year-over-year"
+              title="Comparison"
+              action={
+                stats.length > 0 ? (
+                  <a
+                    href="/api/cycles/export"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:text-accent-strong"
+                  >
+                    <Download className="size-3.5" aria-hidden /> Export CSV
+                  </a>
+                ) : undefined
+              }
+            />
             {stats.length === 0 ? (
               <div className="p-5 pt-0">
                 <EmptyState icon={CalendarRange} title="No cycles yet" description="Create one to open applications." />

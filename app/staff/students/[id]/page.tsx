@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, History } from "lucide-react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getPersonTimeline, describePersonTimelineEvent } from "@/lib/person-timeline";
 import { getStaffNav } from "@/lib/staff-nav";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -40,6 +41,7 @@ export default async function StaffStudentDetailPage({
   if (!student) notFound();
 
   const canPromote = student.status !== "ALUMNI" && student.status !== "WITHDRAWN" && student.status !== "DROPPED_OUT";
+  const timeline = await getPersonTimeline(student.applicantId);
 
   const staffUsers = await prisma.user.findMany({ where: { role: "STAFF", isActive: true } });
   const openRiskFlags = student.mentorLogs.filter((l) => l.isRiskFlag && !l.resolvedAt);
@@ -149,6 +151,35 @@ export default async function StaffStudentDetailPage({
                     </li>
                   ))}
                 </ul>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              eyebrow="One record, whole journey"
+              title="Full timeline"
+              description="Every event from application through today — application, onboarding, mentoring, career — in order."
+            />
+            <CardBody>
+              {timeline.length === 0 ? (
+                <p className="text-sm text-ink-faint">No recorded events yet.</p>
+              ) : (
+                <ol className="space-y-4 border-l border-border pl-4">
+                  {timeline.map((e) => {
+                    const p = (e.payload ?? {}) as Record<string, unknown>;
+                    return (
+                      <li key={e.id} className="relative">
+                        <History className="absolute -left-[22px] top-0.5 size-3.5 text-ink-faint" aria-hidden />
+                        <p className="text-sm text-ink">{describePersonTimelineEvent(e.type, p)}</p>
+                        {typeof p.reason === "string" && p.reason && (
+                          <p className="mt-0.5 text-xs text-ink-muted">Reason: {p.reason}</p>
+                        )}
+                        <p className="mt-0.5 text-xs text-ink-faint">{e.occurredAt.toLocaleString()}</p>
+                      </li>
+                    );
+                  })}
+                </ol>
               )}
             </CardBody>
           </Card>
