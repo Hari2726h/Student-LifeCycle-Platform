@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { getStaffNav } from "@/lib/staff-nav";
 import { findAlumniAtCompany } from "@/lib/alumni-career";
+import { fuzzySearchCompanies } from "@/lib/fuzzy-search";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,11 @@ export default async function StaffAlumniPage({
     company ? findAlumniAtCompany(company) : Promise.resolve([]),
   ]);
 
+  // Exact match is the primary, deterministic path — only reach for
+  // trigram similarity when it comes back empty, so a typo gets a "did you
+  // mean" instead of a dead end.
+  const didYouMean = company && searchResults.length === 0 ? await fuzzySearchCompanies(company) : [];
+
   return (
     <AppShell role="STAFF" name={session.user.name ?? "Staff"} nav={nav}>
       <PageHeader
@@ -64,7 +70,28 @@ export default async function StaffAlumniPage({
                     Matched on normalized name — merges spelling/suffix variants automatically.
                   </p>
                   {searchResults.length === 0 ? (
-                    <p className="mt-2 text-sm text-ink-faint">No alumni currently at a company matching &ldquo;{company}&rdquo;.</p>
+                    <div className="mt-2 space-y-2">
+                      <p className="text-sm text-ink-faint">No alumni currently at a company matching &ldquo;{company}&rdquo;.</p>
+                      {didYouMean.length > 0 && (
+                        <div className="rounded-md border border-border bg-canvas-subtle/60 p-3">
+                          <p className="text-xs text-ink-faint">
+                            Did you mean (fuzzy match, typo-tolerant):
+                          </p>
+                          <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                            {didYouMean.map((m) => (
+                              <li key={m.companyNormalized}>
+                                <a
+                                  href={`/staff/alumni?company=${encodeURIComponent(m.company)}`}
+                                  className="inline-flex items-center rounded-full border border-accent/40 bg-accent-soft/40 px-2.5 py-0.5 text-xs font-medium text-accent hover:bg-accent-soft"
+                                >
+                                  {m.company}
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <ul className="mt-2 space-y-2">
                       {searchResults.map((r) => (

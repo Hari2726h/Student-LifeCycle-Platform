@@ -21,7 +21,24 @@ const fraunces = Fraunces({
 export const metadata: Metadata = {
   title: "Maatram Student Lifecycle Platform",
   description: "From application to alumni — one record, one pipeline.",
+  manifest: "/manifest.webmanifest",
+  icons: { icon: "/icon.svg", apple: "/icon.svg" },
 };
+
+export const viewport = {
+  themeColor: "#1f2937",
+};
+
+// Registered as a plain inline script (not a React effect) so it still
+// runs if a page crashes client-side rendering — install doesn't depend
+// on any component mounting successfully.
+const swRegisterScript = `
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("/sw.js").catch(function () {});
+  });
+}
+`;
 
 // Runs before paint to read the saved theme preference and stamp it on
 // <html>, so there's no light-mode flash for users who've chosen dark.
@@ -46,6 +63,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script dangerouslySetInnerHTML={{ __html: swRegisterScript }} />
       </head>
       <body className="min-h-full flex flex-col bg-bg text-ink">{children}</body>
     </html>

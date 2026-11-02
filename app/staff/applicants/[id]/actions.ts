@@ -14,64 +14,6 @@ async function requireRole(roles: string[]) {
   return session.user;
 }
 
-const verificationSchema = z.object({
-  incomeBandVerified: z.coerce.boolean(),
-  housingCondition: z.enum(["KUTCHA", "SEMI_PUCCA", "PUCCA"]),
-  householdSizeConfirmed: z.coerce.number().int().min(1).max(30),
-  photoEvidenceConfirmed: z.coerce.boolean(),
-  duplicateCheckPassed: z.coerce.boolean(),
-  decision: z.enum(["APPROVED", "REJECTED", "NEEDS_FOLLOW_UP"]),
-  notes: z.string().optional(),
-});
-
-export async function submitVerification(applicantId: string, formData: FormData) {
-  const user = await requireRole(["VOLUNTEER"]);
-
-  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
-  if (applicant.volunteerId !== user.id) {
-    redirect(`/staff/applicants/${applicantId}?error=Not+assigned+to+you`);
-  }
-
-  const parsed = verificationSchema.safeParse({
-    incomeBandVerified: formData.get("incomeBandVerified"),
-    housingCondition: formData.get("housingCondition"),
-    householdSizeConfirmed: formData.get("householdSizeConfirmed"),
-    photoEvidenceConfirmed: formData.get("photoEvidenceConfirmed"),
-    duplicateCheckPassed: formData.get("duplicateCheckPassed"),
-    decision: formData.get("decision"),
-    notes: formData.get("notes") || undefined,
-  });
-  if (!parsed.success) {
-    redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
-  }
-  const data = parsed.data;
-
-  const nextStatus =
-    data.decision === "APPROVED" ? "VERIFIED" : data.decision === "REJECTED" ? "REJECTED" : "UNDER_VERIFICATION";
-
-  await prisma.$transaction(async (tx) => {
-    await tx.verification.upsert({
-      where: { applicantId },
-      create: { applicantId, volunteerId: user.id, visitDate: new Date(), ...data },
-      update: { visitDate: new Date(), ...data },
-    });
-    await tx.applicant.update({ where: { id: applicantId }, data: { status: nextStatus } });
-    // Re-editing an already-submitted verification form (same decision)
-    // must not append a second identical event — only a real transition is
-    // "an important change" worth logging.
-    if (isRealStatusChange(applicant.status, nextStatus)) {
-      await appendEvent(tx, {
-        aggregateType: "Applicant",
-        aggregateId: applicantId,
-        type: "APPLICANT_STATUS_CHANGED",
-        payload: { fromStatus: applicant.status, toStatus: nextStatus, actorId: user.id, action: "VERIFICATION_SUBMITTED", decision: data.decision },
-      });
-    }
-  });
-
-  redirect(`/staff/applicants/${applicantId}`);
-}
-
 /** Books the applicant into a committee member's declared slot (panel
  * availability) rather than a freely-typed date/time — a slot can hold
  * `capacity` applicants before it's full. */

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { appendEvent } from "@/lib/events";
+import { checkIdempotencyKey, recordIdempotencyKey } from "@/lib/idempotency";
 import type { ApplicationStatus } from "@prisma/client";
 
 async function requireStaff() {
@@ -15,7 +16,16 @@ async function requireStaff() {
 /** Runs one bulk transition: every selected applicant whose current status
  * is in `eligibleFrom` moves to `toStatus`, each getting its own Event —
  * an applicant in the wrong state is skipped and counted, not silently
- * dropped or allowed to corrupt the batch. */
+ * dropped or allowed to corrupt the batch.
+ *
+ * Idempotency key: the pipeline page mints one fresh key per page render
+ * (see app/staff/page.tsx) and carries it in a hidden field. A network
+ * retry or double-click resubmits the same key — this is a different
+ * failure mode than isRealStatusChange (which guards repeated *correct*
+ * submissions reaching the same state): here the "before" read and the
+ * decision to redo it happen on an entirely new HTTP request, so there's
+ * no in-memory state to dedupe against, only the key itself. Reloading the
+ * page mints a new key, so a genuinely new bulk action is never blocked. */
 async function runBulkTransition(
   formData: FormData,
   eligibleFrom: ApplicationStatus[],
@@ -23,6 +33,12 @@ async function runBulkTransition(
   actionLabel: string,
 ) {
   const staff = await requireStaff();
+
+  const idempotencyKey = String(formData.get("idempotencyKey") ?? "");
+  const seen = await checkIdempotencyKey(idempotencyKey);
+  if (seen.seen) {
+    redirect(`/staff?result=${encodeURIComponent(seen.resultMessage)}`);
+  }
 
   const applicantIds = formData.getAll("applicantIds").map(String).filter(Boolean);
   const reason = String(formData.get("reason") ?? "").trim();
@@ -59,6 +75,9 @@ async function runBulkTransition(
   const message =
     `${actionLabel.replace("BULK_", "")}: updated ${eligible.length}` +
     (skipped > 0 ? `, skipped ${skipped} (wrong status for this action)` : "");
+
+  await recordIdempotencyKey(idempotencyKey, actionLabel, message);
+
   redirect(`/staff?result=${encodeURIComponent(message)}`);
 }
 
