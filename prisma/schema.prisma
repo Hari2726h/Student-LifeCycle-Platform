@@ -177,6 +177,7 @@ model User {
   notifications        Notification[]
   followUpsAssigned    FollowUpAction[] @relation("FollowUpAssignee")
   followUpsCreated     FollowUpAction[] @relation("FollowUpCreatedBy")
+  webhookSubscriptions WebhookSubscription[]
 
   @@index([role])
 }
@@ -691,4 +692,58 @@ model FollowUpAction {
 
   @@index([studentId, status])
   @@index([assignedToId, status])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Tier 2: webhook subscribers — external systems subscribe to event types
+// and get an HTTP POST for each matching event, replayed from the same
+// cursor-based engine every internal worker uses.
+// ──────────────────────────────────────────────────────────────────────────
+
+model WebhookSubscription {
+  id          String   @id @default(cuid())
+  url         String
+  eventTypes  String[]
+  secret      String // HMAC-signs the delivered payload (X-Maatram-Signature)
+  isActive    Boolean  @default(true)
+
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdById String
+
+  deliveries  WebhookDelivery[]
+  createdAt   DateTime @default(now())
+}
+
+// One row per (subscription, event) delivery attempt. The unique
+// constraint is what makes dispatch idempotent: replaying the event log
+// never re-POSTs to a subscriber that already got this event, the same
+// way Notification's (sourceEventId, recipientId) constraint works.
+model WebhookDelivery {
+  id             String   @id @default(cuid())
+  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscriptionId String
+  eventId        String
+  eventType      String
+  statusCode     Int?
+  success        Boolean  @default(false)
+  responseSnippet String?
+  attemptedAt    DateTime @default(now())
+
+  @@unique([subscriptionId, eventId])
+  @@index([subscriptionId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Tier 2: HTTP-level idempotency keys — a fresh key is minted on every
+// page render carrying a mutating form, so a network-level retry or
+// double-click of the *same* submission replays the cached result instead
+// of re-running the transition. Separate from isRealStatusChange, which
+// guards against repeated *correct* submissions reaching the same state.
+// ──────────────────────────────────────────────────────────────────────────
+
+model IdempotencyKey {
+  key           String   @id
+  action        String
+  resultMessage String?
+  createdAt     DateTime @default(now())
 }

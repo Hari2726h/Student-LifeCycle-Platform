@@ -13,10 +13,11 @@ import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
-import { Field, Select, TextArea } from "@/components/ui/input";
+import { Field, Select } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { GraduationCap } from "lucide-react";
-import { submitVerification, scheduleInterview, submitScore, recordDecision, onboardStudent } from "./actions";
+import { scheduleInterview, submitScore, recordDecision, onboardStudent } from "./actions";
+import { VerificationForm } from "./verification-form";
 
 const VERIFIED_OR_LATER = [
   "VERIFIED",
@@ -258,43 +259,7 @@ function VerificationSection({
       <Card>
         <CardHeader eyebrow="Field visit" title="Verification checklist" />
         <CardBody>
-          <form action={submitVerification.bind(null, applicantId)} className="space-y-4">
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="checkbox" name="incomeBandVerified" defaultChecked={verification?.incomeBandVerified} className="size-4 rounded border-border accent-accent" />
-              Income band verified against evidence
-            </label>
-            <Select label="Housing condition" name="housingCondition" required defaultValue={verification?.housingCondition ?? ""} placeholder="Select">
-              <option value="KUTCHA">Kutcha</option>
-              <option value="SEMI_PUCCA">Semi-pucca</option>
-              <option value="PUCCA">Pucca</option>
-            </Select>
-            <Field
-              label="Household size (confirmed)"
-              type="number"
-              name="householdSizeConfirmed"
-              min={1}
-              max={30}
-              required
-              defaultValue={verification?.householdSizeConfirmed ?? undefined}
-            />
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="checkbox" name="photoEvidenceConfirmed" defaultChecked={verification?.photoEvidenceConfirmed} className="size-4 rounded border-border accent-accent" />
-              Photo evidence collected during the visit
-            </label>
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="checkbox" name="duplicateCheckPassed" defaultChecked className="size-4 rounded border-border accent-accent" />
-              No duplicate/returning application found
-            </label>
-            <TextArea label="Notes (optional)" name="notes" rows={3} defaultValue={verification?.notes ?? ""} />
-            <Select label="Decision" name="decision" required placeholder="Select">
-              <option value="APPROVED">Approve — move to interview</option>
-              <option value="NEEDS_FOLLOW_UP">Needs follow-up visit</option>
-              <option value="REJECTED">Reject</option>
-            </Select>
-            <Button type="submit" variant="primary" className="w-full">
-              Save verification
-            </Button>
-          </form>
+          <VerificationForm applicantId={applicantId} verification={verification} />
         </CardBody>
       </Card>
     );

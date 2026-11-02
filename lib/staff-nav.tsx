@@ -1,4 +1,4 @@
-import { ListChecks, CalendarPlus, Bell, History, Users2, CalendarRange } from "lucide-react";
+import { ListChecks, CalendarPlus, Bell, History, Users2, CalendarRange, Webhook } from "lucide-react";
 import type { NavItem } from "@/components/sidebar-content";
 import { getUnreadNotificationCount } from "@/lib/notifications";
 
@@ -18,6 +18,7 @@ export async function getStaffNav(role: string, userId: string): Promise<NavItem
     nav.push({ label: "Events", href: "/staff/events", icon: <History /> });
     nav.push({ label: "Alumni", href: "/staff/alumni", icon: <Users2 /> });
     nav.push({ label: "Cycles", href: "/staff/cycles", icon: <CalendarRange /> });
+    nav.push({ label: "Webhooks", href: "/staff/webhooks", icon: <Webhook /> });
   }
 
   return nav;

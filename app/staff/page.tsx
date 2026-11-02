@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { DISTRICTS } from "@/lib/constants";
 import { getStaffNav } from "@/lib/staff-nav";
 import { getAtRiskStudents } from "@/lib/retention";
+import { fuzzySearchApplicantsByName } from "@/lib/fuzzy-search";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, Badge } from "@/components/ui/badge";
@@ -35,7 +36,7 @@ const STUDENT_STAGE_ORDER = ["ONBOARDING", "ACTIVE", "PLACED", "ALUMNI", "WITHDR
 export default async function StaffHome({
   searchParams,
 }: {
-  searchParams: Promise<{ district?: string; collegeId?: string; status?: string; result?: string; error?: string }>;
+  searchParams: Promise<{ district?: string; collegeId?: string; status?: string; name?: string; result?: string; error?: string }>;
 }) {
   const session = await requireRole(["STAFF", "COMMITTEE", "VOLUNTEER"]);
   const role = session.user.role;
@@ -66,19 +67,33 @@ export default async function StaffHome({
       : [];
 
   const colleges = role === "STAFF" ? await prisma.college.findMany({ orderBy: { name: "asc" } }) : [];
-  const fullPipeline =
+
+  // Typo-tolerant: "Anbarsau" still finds "Anbarasu". Only engaged when a
+  // name is actually typed — otherwise the pipeline is the plain exact-
+  // filter list it always was, ordered by recency.
+  const nameMatches = role === "STAFF" && filters.name ? await fuzzySearchApplicantsByName(filters.name) : [];
+  const nameMatchIds = nameMatches.map((m) => m.id);
+
+  const fullPipelineRows =
     role === "STAFF"
       ? await prisma.applicant.findMany({
           where: {
             ...(filters.district ? { district: filters.district } : {}),
             ...(filters.collegeId ? { preferredCollegeId: filters.collegeId } : {}),
             ...(filters.status ? { status: filters.status as ApplicationStatus } : {}),
+            ...(filters.name ? { id: { in: nameMatchIds } } : {}),
           },
           orderBy: { createdAt: "desc" },
           include: { volunteer: true },
           take: 25,
         })
       : [];
+
+  // Fuzzy match ranks by similarity, not recency — re-sort to that order
+  // when a name search is active so the closest match is first.
+  const fullPipeline = filters.name
+    ? [...fullPipelineRows].sort((a, b) => nameMatchIds.indexOf(a.id) - nameMatchIds.indexOf(b.id))
+    : fullPipelineRows;
 
   const atRiskStudents = role === "STAFF" ? await getAtRiskStudents() : [];
 
@@ -170,7 +185,13 @@ export default async function StaffHome({
           <section className="mt-8">
             <Card>
               <CardHeader eyebrow="Latest 25" title="Full pipeline" />
-              <form method="GET" className="grid grid-cols-1 gap-3 px-5 pb-4 sm:grid-cols-3">
+              <form method="GET" className="grid grid-cols-1 gap-3 px-5 pb-4 sm:grid-cols-4">
+                <Field
+                  label="Name (typo-tolerant)"
+                  name="name"
+                  placeholder="e.g. Anbarasu"
+                  defaultValue={filters.name ?? ""}
+                />
                 <Select label="District" name="district" defaultValue={filters.district ?? ""} placeholder="All districts">
                   {DISTRICTS.map((d) => (
                     <option key={d} value={d}>
@@ -198,7 +219,7 @@ export default async function StaffHome({
                   </Button>
                 </div>
               </form>
-              <BulkPipelineTable rows={fullPipeline} />
+              <BulkPipelineTable rows={fullPipeline} idempotencyKey={crypto.randomUUID()} />
             </Card>
           </section>
 
@@ -331,8 +352,10 @@ function PipelineTable<T>({
 
 function BulkPipelineTable({
   rows,
+  idempotencyKey,
 }: {
   rows: { id: string; fullName: string; district: string; status: ApplicationStatus; volunteer: { name: string } | null }[];
+  idempotencyKey: string;
 }) {
   if (rows.length === 0) {
     return (
@@ -344,6 +367,12 @@ function BulkPipelineTable({
 
   return (
     <form className="px-5 pb-5">
+      {/* Minted fresh on every page render — a double-click or network
+          retry resubmits this same key and the server replays the cached
+          result instead of redoing the transition. Reloading the page
+          gets a new key, so a deliberate second submission still goes
+          through. */}
+      <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
       <TableScroll>
         <Table>
           <Thead>
