@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resetWorkerBookmark } from "@/lib/workers/engine";
 import { runRiskFlagNotifier, RISK_FLAG_WORKER_NAME } from "@/lib/workers/risk-flag-notifier";
+import { verifyEventChain } from "@/lib/event-integrity";
 
 async function requireStaff() {
   const session = await auth();
@@ -40,6 +41,15 @@ export async function checkForNewEvents(sinceSequence: number) {
     prisma.event.aggregate({ _max: { sequence: true } }),
   ]);
   return { newCount, latestSequence: latest._max.sequence ?? sinceSequence };
+}
+
+export async function checkChainIntegrity() {
+  await requireStaff();
+  const result = await verifyEventChain();
+  const message = result.valid
+    ? `Chain intact — all ${result.totalChecked} events verified, nothing tampered with.`
+    : `TAMPERING DETECTED at event #${result.brokenAtSequence}: ${result.reason}`;
+  redirect(`/staff/events?${result.valid ? "result" : "error"}=${encodeURIComponent(message)}`);
 }
 
 export async function replayFromTimestamp(formData: FormData) {

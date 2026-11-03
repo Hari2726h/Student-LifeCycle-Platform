@@ -12,6 +12,7 @@ import { Select, Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createFollowUp, resolveFollowUp, resolveRiskFlag, promoteToAlumnus } from "./actions";
 import { TimeTravelViewer } from "@/components/time-travel-viewer";
+import { JourneySummary } from "@/components/journey-summary";
 
 export default async function StaffStudentDetailPage({
   params,
@@ -162,8 +163,13 @@ export default async function StaffStudentDetailPage({
               title="Watch this record evolve"
               description="Drag the slider — the snapshot is reconstructed live from the event log, not re-fetched."
             />
-            <CardBody>
+            <CardBody className="space-y-4">
               <TimeTravelViewer events={timeline} />
+              {timeline.length > 0 && (
+                <div className="border-t border-border pt-4">
+                  <JourneySummary applicantId={student.applicantId} />
+                </div>
+              )}
             </CardBody>
           </Card>
 

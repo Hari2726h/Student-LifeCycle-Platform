@@ -20,6 +20,7 @@ import { scheduleInterview, submitScore, recordDecision, onboardStudent } from "
 import { VerificationForm } from "./verification-form";
 import { TimeTravelViewer } from "@/components/time-travel-viewer";
 import { AdvisorySummary } from "@/components/advisory-summary";
+import { JourneySummary } from "@/components/journey-summary";
 
 const VERIFIED_OR_LATER = [
   "VERIFIED",
@@ -216,7 +217,7 @@ export default async function ApplicantDetailPage({
             />
           )}
 
-          {canViewHistory && <TimeTravelSection events={history} />}
+          {canViewHistory && <TimeTravelSection events={history} applicantId={applicant.id} />}
           {canViewHistory && <HistorySection events={history} />}
         </div>
 
@@ -524,7 +525,7 @@ function OnboardingSection({
  * the log is already the source of truth. Merges events from every stage
  * this person has passed through (lib/person-timeline.ts), so this is
  * their whole journey, not just the applicant part of it. */
-function TimeTravelSection({ events }: { events: Event[] }) {
+function TimeTravelSection({ events, applicantId }: { events: Event[]; applicantId: string }) {
   return (
     <Card>
       <CardHeader
@@ -532,8 +533,13 @@ function TimeTravelSection({ events }: { events: Event[] }) {
         title="Watch this record evolve"
         description="Drag the slider — the snapshot below is reconstructed live from the event log, not re-fetched."
       />
-      <CardBody>
+      <CardBody className="space-y-4">
         <TimeTravelViewer events={events} />
+        {events.length > 0 && (
+          <div className="border-t border-border pt-4">
+            <JourneySummary applicantId={applicantId} />
+          </div>
+        )}
       </CardBody>
     </Card>
   );

@@ -1,4 +1,4 @@
-import { History, RotateCcw, PlayCircle, Activity } from "lucide-react";
+import { History, RotateCcw, PlayCircle, Activity, ShieldCheck } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { getStaffNav } from "@/lib/staff-nav";
@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, Thead, Th, Tr, Td, TableScroll } from "@/components/ui/table";
-import { processNewEvents, replayFromStart, replayFromTimestamp } from "./actions";
+import { processNewEvents, replayFromStart, replayFromTimestamp, checkChainIntegrity } from "./actions";
 import { EventTicker } from "./event-ticker";
 
 function timeAgo(date: Date) {
@@ -142,6 +142,22 @@ export default async function EventsPage({
                 Notifications are upserted on (event, recipient) — replaying never sends a duplicate. Try &ldquo;Replay
                 from start&rdquo; twice in a row and watch the sent count stay the same.
               </p>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              eyebrow="Tamper-evidence"
+              title="Integrity check"
+              description="Recomputes every event's hash from scratch, end to end — not just that the chain looks well-formed."
+              action={<ShieldCheck className="size-4 text-ink-faint" aria-hidden />}
+            />
+            <CardBody>
+              <form action={checkChainIntegrity}>
+                <Button type="submit" variant="primary" className="w-full">
+                  <ShieldCheck className="size-4" aria-hidden /> Verify chain integrity
+                </Button>
+              </form>
             </CardBody>
           </Card>
 
