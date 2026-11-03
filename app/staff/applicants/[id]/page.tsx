@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { GraduationCap } from "lucide-react";
 import { scheduleInterview, submitScore, recordDecision, onboardStudent } from "./actions";
 import { VerificationForm } from "./verification-form";
+import { TimeTravelViewer } from "@/components/time-travel-viewer";
+import { AdvisorySummary } from "@/components/advisory-summary";
 
 const VERIFIED_OR_LATER = [
   "VERIFIED",
@@ -214,6 +216,7 @@ export default async function ApplicantDetailPage({
             />
           )}
 
+          {canViewHistory && <TimeTravelSection events={history} />}
           {canViewHistory && <HistorySection events={history} />}
         </div>
 
@@ -367,6 +370,10 @@ function InterviewSection({
           </ul>
         )}
 
+        {(role === "COMMITTEE" || role === "STAFF") && interview.scores.length > 0 && (
+          <AdvisorySummary applicantId={applicantId} />
+        )}
+
         {interview.decision === "PENDING" ? (
           role === "COMMITTEE" ? (
             <>
@@ -517,6 +524,21 @@ function OnboardingSection({
  * the log is already the source of truth. Merges events from every stage
  * this person has passed through (lib/person-timeline.ts), so this is
  * their whole journey, not just the applicant part of it. */
+function TimeTravelSection({ events }: { events: Event[] }) {
+  return (
+    <Card>
+      <CardHeader
+        eyebrow="Time travel"
+        title="Watch this record evolve"
+        description="Drag the slider — the snapshot below is reconstructed live from the event log, not re-fetched."
+      />
+      <CardBody>
+        <TimeTravelViewer events={events} />
+      </CardBody>
+    </Card>
+  );
+}
+
 function HistorySection({ events }: { events: Event[] }) {
   return (
     <Card>

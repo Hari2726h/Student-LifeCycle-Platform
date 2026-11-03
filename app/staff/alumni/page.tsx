@@ -1,4 +1,6 @@
-import { Users2, Search, RotateCcw } from "lucide-react";
+import Link from "next/link";
+import { Users2, Search, RotateCcw, Share2, Sparkles } from "lucide-react";
+import { AlumniAskBox } from "@/components/alumni-ask-box";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { getStaffNav } from "@/lib/staff-nav";
@@ -48,6 +50,11 @@ export default async function StaffAlumniPage({
         eyebrow="Alumni"
         title="Career tracker"
         description="Current position is a projection, replayed from each alumnus's career history — never edited directly."
+        action={
+          <Link href="/staff/alumni/graph" className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:text-accent-strong">
+            <Share2 className="size-4" aria-hidden /> View career network
+          </Link>
+        }
       />
 
       {result && <div className="mb-4 rounded-md border border-success/30 bg-success-soft/50 px-3 py-2 text-sm text-success">{decodeURIComponent(result)}</div>}
@@ -55,6 +62,18 @@ export default async function StaffAlumniPage({
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
+          <Card>
+            <CardHeader
+              eyebrow="AI · advisory only"
+              title="Ask about alumni"
+              description="Answers only from the current directory below — never outside knowledge."
+              action={<Sparkles className="size-4 text-ink-faint" aria-hidden />}
+            />
+            <CardBody>
+              <AlumniAskBox />
+            </CardBody>
+          </Card>
+
           <Card>
             <CardHeader eyebrow="Query" title="Who works at…" action={<Search className="size-4 text-ink-faint" aria-hidden />} />
             <CardBody>

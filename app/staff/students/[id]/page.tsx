@@ -11,6 +11,7 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Select, Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createFollowUp, resolveFollowUp, resolveRiskFlag, promoteToAlumnus } from "./actions";
+import { TimeTravelViewer } from "@/components/time-travel-viewer";
 
 export default async function StaffStudentDetailPage({
   params,
@@ -152,6 +153,17 @@ export default async function StaffStudentDetailPage({
                   ))}
                 </ul>
               )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              eyebrow="Time travel"
+              title="Watch this record evolve"
+              description="Drag the slider — the snapshot is reconstructed live from the event log, not re-fetched."
+            />
+            <CardBody>
+              <TimeTravelViewer events={timeline} />
             </CardBody>
           </Card>
 
