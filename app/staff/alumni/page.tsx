@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Users2, Search, RotateCcw, Share2, Sparkles } from "lucide-react";
 import { AlumniAskBox } from "@/components/alumni-ask-box";
+import { IssueCredentialButton } from "@/components/issue-credential-button";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { getStaffNav } from "@/lib/staff-nav";
@@ -143,6 +144,8 @@ export default async function StaffAlumniPage({
                         <Th>Name</Th>
                         <Th>Current role</Th>
                         <Th>Current company</Th>
+                        <Th>Flags</Th>
+                        <Th>Credential</Th>
                       </tr>
                     </Thead>
                     <tbody>
@@ -151,6 +154,15 @@ export default async function StaffAlumniPage({
                           <Td>{a.student.user.name}</Td>
                           <Td className="text-ink-muted">{a.currentRole ?? "—"}</Td>
                           <Td className="text-ink-muted">{a.currentCompany ?? "—"}</Td>
+                          <Td>
+                            <div className="flex flex-wrap gap-1">
+                              {a.mentoringOptIn && <Badge tone="success">Mentoring</Badge>}
+                              {a.openToReferrals && <Badge tone="info">Open to referrals</Badge>}
+                            </div>
+                          </Td>
+                          <Td>
+                            <IssueCredentialButton alumniProfileId={a.id} fileLabel={a.student.user.name.replace(/\s+/g, "-").toLowerCase()} />
+                          </Td>
                         </Tr>
                       ))}
                     </tbody>

@@ -9,7 +9,7 @@ import { Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, Thead, Th, Tr, Td, TableScroll } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { selfReportCareerEvent } from "./actions";
+import { selfReportCareerEvent, toggleMentoringOptIn, toggleReferralFlag } from "./actions";
 
 const SOURCE_TONE: Record<string, "accent" | "info" | "gold"> = {
   SELF_REPORTED: "accent",
@@ -206,10 +206,49 @@ export default async function PortalHome() {
               <Card className="border-gold/30 bg-gold-soft/40">
                 <CardHeader
                   eyebrow="Giving back"
-                  title="Karpom Karpippom"
-                  description={`Mentoring opt-in: ${student.alumniProfile.mentoringOptIn ? "Yes" : "No"}`}
+                  title="Mentor a current student"
+                  description={
+                    student.alumniProfile.mentoringOptIn
+                      ? "You're opted in — current students may be matched to you as a mentor."
+                      : "Opt in to show up as a mentor candidate for current students."
+                  }
                   action={<Heart className="size-4 text-gold" aria-hidden />}
                 />
+                <CardBody className="space-y-3">
+                  <form action={toggleMentoringOptIn} className="space-y-3">
+                    <input type="hidden" name="optIn" value={student.alumniProfile.mentoringOptIn ? "false" : "true"} />
+                    {!student.alumniProfile.mentoringOptIn && (
+                      <Field
+                        label="Availability (optional)"
+                        name="availability"
+                        placeholder="e.g. Weekday evenings, video calls"
+                        defaultValue={student.alumniProfile.availability ?? ""}
+                      />
+                    )}
+                    <Button type="submit" variant={student.alumniProfile.mentoringOptIn ? "secondary" : "primary"} className="w-full">
+                      {student.alumniProfile.mentoringOptIn ? "Opt out of mentoring" : "Opt in to mentor students"}
+                    </Button>
+                  </form>
+                  {student.alumniProfile.mentoringOptIn && student.alumniProfile.availability && (
+                    <p className="text-xs text-ink-faint">Availability: {student.alumniProfile.availability}</p>
+                  )}
+
+                  <form action={toggleReferralFlag} className="border-t border-border pt-3">
+                    <input type="hidden" name="openToReferrals" value={student.alumniProfile.openToReferrals ? "false" : "true"} />
+                    <label className="flex items-center justify-between gap-2 text-sm text-ink">
+                      <span>Open to referring someone for a job at my company</span>
+                      <Button type="submit" variant={student.alumniProfile.openToReferrals ? "secondary" : "primary"} size="sm">
+                        {student.alumniProfile.openToReferrals ? "Turn off" : "Turn on"}
+                      </Button>
+                    </label>
+                  </form>
+                </CardBody>
+              </Card>
+            )}
+
+            {student.alumniProfile && (
+              <Card className="border-gold/30 bg-gold-soft/40">
+                <CardHeader eyebrow="Giving back" title="Karpom Karpippom" />
                 <CardBody>
                   {student.alumniProfile.karpomSessions.length === 0 ? (
                     <p className="text-sm text-ink-faint">No tutoring sessions logged yet.</p>

@@ -30,7 +30,7 @@ async function makeSubscription(url: string) {
 
 async function makeEvent() {
   const event = await prisma.event.create({
-    data: { aggregateType: "Test", aggregateId: `test-${crypto.randomUUID()}`, type: "TEST_WEBHOOK_EVENT", payload: {} },
+    data: { aggregateType: "Test", aggregateId: `test-${crypto.randomUUID()}`, type: "TEST_WEBHOOK_EVENT", payload: {}, hash: "test-hash", prevHash: "test-prev-hash" },
   });
   eventIds.push(event.id);
   return event;

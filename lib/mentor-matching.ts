@@ -1,14 +1,5 @@
 import { prisma } from "@/lib/prisma";
-
-/** Crude but explainable: buckets a course name into the same broad
- * specialty categories mentors are tagged with. Good enough to rank
- * suggestions; staff still makes the final call. */
-function courseToSpecialty(course: string): string {
-  const engineering = /^B\.?\s?(E|Tech)\.?/i;
-  if (engineering.test(course)) return "Engineering";
-  if (/medic/i.test(course)) return "Medical";
-  return "Arts & Science";
-}
+import { courseToSpecialty } from "@/lib/specialty";
 
 export type MentorSuggestion = {
   mentorId: string;
@@ -31,6 +22,7 @@ export async function suggestMentors(applicantId: string): Promise<MentorSuggest
   const targetSpecialty = applicant.courseInterest ? courseToSpecialty(applicant.courseInterest) : null;
 
   const mentors = await prisma.mentor.findMany({
+    where: { isActive: true },
     include: { user: true, _count: { select: { mentees: true } } },
   });
 

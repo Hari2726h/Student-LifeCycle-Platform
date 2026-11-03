@@ -30,7 +30,7 @@ function freshAggregateId() {
 
 async function makeEvent(aggregateId: string, occurredAt: Date) {
   return prisma.event.create({
-    data: { aggregateType: "Test", aggregateId, type: EVENT_TYPE, payload: {}, occurredAt },
+    data: { aggregateType: "Test", aggregateId, type: EVENT_TYPE, payload: {}, occurredAt, hash: "test-hash", prevHash: "test-prev-hash" },
   });
 }
 
@@ -170,7 +170,7 @@ describe("runWorker (replay engine)", () => {
     const workerName = freshWorkerName();
     const aggregateId = freshAggregateId();
     await prisma.event.create({
-      data: { aggregateType: "Test", aggregateId, type: "OTHER_EVENT_TYPE", payload: {}, occurredAt: secondsAgo(10) },
+      data: { aggregateType: "Test", aggregateId, type: "OTHER_EVENT_TYPE", payload: {}, occurredAt: secondsAgo(10), hash: "test-hash", prevHash: "test-prev-hash" },
     });
     await makeEvent(aggregateId, secondsAgo(10));
 

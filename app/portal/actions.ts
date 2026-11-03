@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { addCareerEvent } from "@/lib/alumni-career";
+import { setAlumniMentoringOptIn, setAlumniReferralFlag } from "@/lib/alumni-mentoring";
 
 const schema = z.object({
   company: z.string().min(2),
@@ -40,5 +41,28 @@ export async function selfReportCareerEvent(formData: FormData) {
     startDate: parsed.data.startDate,
   });
 
+  revalidatePath("/portal");
+}
+
+export async function toggleMentoringOptIn(formData: FormData) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "ALUMNI") redirect("/login");
+
+  const student = await prisma.student.findUniqueOrThrow({ where: { userId: session.user.id } });
+  const optIn = formData.get("optIn") === "true";
+  const availability = String(formData.get("availability") ?? "").trim() || null;
+
+  await setAlumniMentoringOptIn(student.id, optIn, availability);
+  revalidatePath("/portal");
+}
+
+export async function toggleReferralFlag(formData: FormData) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "ALUMNI") redirect("/login");
+
+  const student = await prisma.student.findUniqueOrThrow({ where: { userId: session.user.id } });
+  const openToReferrals = formData.get("openToReferrals") === "true";
+
+  await setAlumniReferralFlag(student.id, openToReferrals);
   revalidatePath("/portal");
 }

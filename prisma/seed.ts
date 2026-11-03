@@ -9,6 +9,7 @@ import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
 import { DISTRICTS, COURSES } from "../lib/constants";
 import { addCareerEvent } from "../lib/alumni-career";
+import { courseToSpecialty } from "../lib/specialty";
 
 const prisma = new PrismaClient();
 
@@ -395,6 +396,19 @@ async function main() {
           bio: "Maatram alumna, now giving back by mentoring juniors through Karpom Karpippom.",
           mentoringOptIn: true,
           availability: "Weekends",
+        },
+      });
+      // Keep this in sync with what setAlumniMentoringOptIn() does for a
+      // live opt-in — otherwise the flag alone would show a "Mentoring"
+      // badge on /staff/alumni for someone who'd never actually be
+      // surfaced as a mentor candidate.
+      await prisma.mentor.create({
+        data: {
+          userId: a.userId,
+          type: "ALUMNI",
+          specialty: courseToSpecialty(student.program),
+          district: a.district,
+          maxLoad: 5,
         },
       });
       // currentRole/currentCompany are a projection, not a fact — seed the

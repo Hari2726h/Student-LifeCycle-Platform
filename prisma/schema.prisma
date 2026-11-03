@@ -430,6 +430,9 @@ model Mentor {
   specialty   String?
   district    String?
   maxLoad     Int        @default(15)
+  // Lets an alumnus opt out of new mentor matches without losing history
+  // with students they already mentor — see lib/mentor-matching.ts.
+  isActive    Boolean    @default(true)
 
   mentees     Student[]
   logs        MentorLog[]
@@ -519,8 +522,15 @@ model AlumniProfile {
   currentCompany  String?
 
   bio             String?
+  // Toggled from /portal — when set true, lib/alumni-mentoring.ts
+  // provisions a real Mentor(type=ALUMNI) row so this person actually
+  // starts showing up in suggestMentors() for current students, not just
+  // a label nobody reads.
   mentoringOptIn  Boolean  @default(false)
   availability    String?
+  // A lighter-weight signal than mentoring: "ask me for a referral",
+  // surfaced as a badge on the staff alumni directory.
+  openToReferrals Boolean  @default(false)
 
   careerEvents    CareerEvent[]
   karpomSessions  KarpomSession[]
@@ -627,6 +637,12 @@ model Event {
   payload       Json
 
   occurredAt    DateTime @default(now())
+
+  // Tamper-evident hash chain — see lib/event-integrity.ts. `hash` commits
+  // to this row's own content plus `prevHash`, which must equal the
+  // previous row's `hash`; verifyEventChain() recomputes both end to end.
+  hash          String
+  prevHash      String
 
   @@index([type, sequence])
   @@index([aggregateType, aggregateId])
