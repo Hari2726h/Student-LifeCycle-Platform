@@ -15,8 +15,16 @@ import { Badge } from "@/components/ui/badge";
 export function TimeTravelViewer({ events }: { events: Event[] }) {
   const [index, setIndex] = useState(Math.max(events.length - 1, 0));
 
-  const state = useMemo(() => reduceTimelineAt(events, index), [events, index]);
-  const current = events[index];
+  // Clamped, not raw `index` — if `events` ever shrinks between renders
+  // (a parent refetch returning fewer events than before), the un-resynced
+  // `index` from the previous render could point past the new array's end,
+  // and `events[index]` below would be `undefined`, crashing on
+  // `current.occurredAt`. Deriving a safe index here instead of trusting
+  // state means this can never go out of bounds, with no effect needed to
+  // resync it.
+  const safeIndex = Math.min(index, Math.max(events.length - 1, 0));
+  const state = useMemo(() => reduceTimelineAt(events, safeIndex), [events, safeIndex]);
+  const current = events[safeIndex];
 
   if (events.length === 0) {
     return <p className="text-sm text-ink-faint">No recorded events yet — nothing to replay.</p>;
@@ -30,12 +38,12 @@ export function TimeTravelViewer({ events }: { events: Event[] }) {
           type="range"
           min={0}
           max={events.length - 1}
-          value={index}
+          value={safeIndex}
           onChange={(e) => setIndex(Number(e.target.value))}
           className="h-1.5 w-full appearance-none rounded-full bg-border accent-accent"
         />
         <span className="shrink-0 font-mono text-xs tabular-nums text-ink-faint">
-          {index + 1}/{events.length}
+          {safeIndex + 1}/{events.length}
         </span>
       </div>
 

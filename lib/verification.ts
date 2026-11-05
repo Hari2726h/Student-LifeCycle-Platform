@@ -14,12 +14,24 @@ export const verificationSchema = z.object({
 
 export type VerificationResult = { ok: true } | { ok: false; error: string };
 
+// The statuses a verification visit is actually allowed to act on. Past
+// this point the applicant has moved on (interview stage, a committee
+// decision, or onboarding) and a verification submission — especially one
+// that was queued offline and could be syncing hours or days later —
+// must not be able to drag them back to VERIFIED/UNDER_VERIFICATION/REJECTED.
+const VERIFIABLE_STATUSES = ["SUBMITTED", "UNDER_VERIFICATION"];
+
 /** The write path shared by the online form (a server action, same
  * request/response cycle) and the offline-queued submission (a plain API
  * route a service worker can retry later) — same validation, same
  * ownership check, same event-append rule, so a verification saved while
  * offline and synced minutes later is indistinguishable from one typed in
- * with a live connection. */
+ * with a live connection.
+ *
+ * The status check matters most for the offline path: a submission queued
+ * while the applicant was still SUBMITTED could otherwise sync after the
+ * committee has already accepted/rejected them (or after onboarding),
+ * silently reverting a later decision. */
 export async function submitVerificationCore(
   applicantId: string,
   volunteerId: string,
@@ -28,6 +40,9 @@ export async function submitVerificationCore(
   const applicant = await prisma.applicant.findUnique({ where: { id: applicantId } });
   if (!applicant) return { ok: false, error: "Applicant not found" };
   if (applicant.volunteerId !== volunteerId) return { ok: false, error: "Not assigned to you" };
+  if (!VERIFIABLE_STATUSES.includes(applicant.status)) {
+    return { ok: false, error: "This applicant has already moved past the verification stage" };
+  }
 
   const parsed = verificationSchema.safeParse({
     incomeBandVerified: formData.get("incomeBandVerified"),

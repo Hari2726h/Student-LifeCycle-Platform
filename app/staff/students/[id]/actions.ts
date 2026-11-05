@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { appendEvent, isRealStatusChange } from "@/lib/events";
-import { addCareerEvent } from "@/lib/alumni-career";
+import { addCareerEventTx } from "@/lib/alumni-career";
 
 async function requireStaff() {
   const session = await auth();
@@ -95,7 +95,13 @@ export async function promoteToAlumnus(studentId: string, formData: FormData) {
   const data = parsed.data;
   const hasPlacement = !!(data.company && data.role);
 
-  const alumniProfileId = await prisma.$transaction(async (tx) => {
+  // All in one transaction — including the first CareerEvent when there's
+  // a placement. Splitting this into two transactions (promote, then
+  // separately add the career event) left a real gap: a failure between
+  // them would commit the student as permanently ALUMNI with a Placement
+  // record but no CareerEvent and no derived currentCompany/currentRole,
+  // two disagreeing stories of the same fact with no automatic recovery.
+  await prisma.$transaction(async (tx) => {
     if (hasPlacement) {
       await tx.placement.upsert({
         where: { studentId },
@@ -118,21 +124,16 @@ export async function promoteToAlumnus(studentId: string, formData: FormData) {
       });
     }
 
-    return profile.id;
+    if (hasPlacement) {
+      await addCareerEventTx(tx, {
+        alumniProfileId: profile.id,
+        source: "PLACEMENT",
+        company: data.company!,
+        role: data.role!,
+        startDate: data.joiningDate ?? new Date(),
+      });
+    }
   });
-
-  if (hasPlacement) {
-    // A separate call (not inside the transaction above): addCareerEvent
-    // runs its own replay/projection recompute, which needs the
-    // AlumniProfile row to already be committed and visible.
-    await addCareerEvent({
-      alumniProfileId,
-      source: "PLACEMENT",
-      company: data.company!,
-      role: data.role!,
-      startDate: data.joiningDate ?? new Date(),
-    });
-  }
 
   revalidatePath(`/staff/students/${studentId}`);
   redirect(`/staff/students/${studentId}`);

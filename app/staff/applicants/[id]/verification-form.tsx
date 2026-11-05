@@ -29,18 +29,29 @@ export function VerificationForm({ applicantId, verification }: { applicantId: s
   const [pendingCount, setPendingCount] = useState(0);
 
   const refreshPendingCount = useCallback(async () => {
-    const items = await listQueuedVerifications();
-    setPendingCount(items.length);
+    try {
+      const items = await listQueuedVerifications();
+      setPendingCount(items.length);
+    } catch {
+      // IndexedDB unavailable on this device — the pending-count badge
+      // just won't show, no worse than before this feature existed.
+    }
   }, []);
 
   const sync = useCallback(async () => {
-    const { synced } = await flushQueuedVerifications();
-    await refreshPendingCount();
-    if (synced > 0) router.refresh();
+    try {
+      const { synced } = await flushQueuedVerifications();
+      await refreshPendingCount();
+      if (synced > 0) router.refresh();
+    } catch {
+      // Same IndexedDB-unavailable case — "Sync now" has nothing to do.
+    }
   }, [refreshPendingCount, router]);
 
   useEffect(() => {
-    listQueuedVerifications().then((items) => setPendingCount(items.length));
+    listQueuedVerifications()
+      .then((items) => setPendingCount(items.length))
+      .catch(() => {});
     window.addEventListener("online", sync);
     return () => window.removeEventListener("online", sync);
   }, [sync]);
@@ -78,9 +89,21 @@ export function VerificationForm({ applicantId, verification }: { applicantId: s
       formData.forEach((v, k) => {
         if (k !== "applicantId") fields[k] = String(v);
       });
-      await queueVerification(applicantId, fields);
-      await refreshPendingCount();
-      setStatus("queued");
+      try {
+        await queueVerification(applicantId, fields);
+        await refreshPendingCount();
+        setStatus("queued");
+      } catch {
+        // IndexedDB itself can fail — private browsing mode, storage
+        // quota, or a browser that doesn't support it. Without this catch
+        // the form was left stuck on "saving" forever (button disabled,
+        // no feedback) with the verification silently never saved
+        // anywhere. Surfacing it at least tells the volunteer to retry
+        // once they're back online instead of losing the visit's data
+        // without knowing it.
+        setStatus("error");
+        setError("Couldn't save offline on this device — please retry once you're back online.");
+      }
     }
   }
 

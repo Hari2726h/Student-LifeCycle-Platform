@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resetWorkerBookmark } from "@/lib/workers/engine";
-import { runWebhookDispatcher, generateWebhookSecret, WEBHOOK_WORKER_NAME, WEBHOOK_EVENT_TYPES } from "@/lib/webhooks";
+import { runWebhookDispatcher, generateWebhookSecret, webhookBookmarkName, WEBHOOK_EVENT_TYPES } from "@/lib/webhooks";
+import { assertSafeWebhookUrl, UnsafeWebhookUrlError } from "@/lib/ssrf-guard";
 
 async function requireStaff() {
   const session = await auth();
@@ -23,6 +24,13 @@ export async function createSubscription(formData: FormData) {
   }
   if (eventTypes.length === 0) {
     redirect("/staff/webhooks?error=Select+at+least+one+event+type");
+  }
+
+  try {
+    await assertSafeWebhookUrl(url);
+  } catch (err) {
+    const message = err instanceof UnsafeWebhookUrlError ? err.message : "Could not validate that URL";
+    redirect(`/staff/webhooks?error=${encodeURIComponent(message)}`);
   }
 
   await prisma.webhookSubscription.create({
@@ -53,7 +61,10 @@ export async function runDispatcherNow() {
 
 export async function replayWebhooksFromStart() {
   await requireStaff();
-  await resetWorkerBookmark(WEBHOOK_WORKER_NAME, 0);
+  // Each subscription has its own bookmark (see lib/webhooks.ts) — reset
+  // every active one, not a single shared cursor.
+  const subscriptions = await prisma.webhookSubscription.findMany({ where: { isActive: true }, select: { id: true } });
+  await Promise.all(subscriptions.map((sub) => resetWorkerBookmark(webhookBookmarkName(sub.id), 0)));
   const { processed } = await runWebhookDispatcher();
   redirect(`/staff/webhooks?result=${encodeURIComponent(`Replayed from start — ${processed} event(s) re-checked`)}`);
 }

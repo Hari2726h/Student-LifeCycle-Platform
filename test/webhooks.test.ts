@@ -39,7 +39,7 @@ async function makeEvent() {
 describe("deliverWebhookEvent", () => {
   it("POSTs the event once and records a successful delivery", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
-    const sub = await makeSubscription("https://subscriber.example/hook");
+    const sub = await makeSubscription("https://93.184.216.34/hook");
     const event = await makeEvent();
 
     await deliverWebhookEvent(sub, event);
@@ -58,7 +58,7 @@ describe("deliverWebhookEvent", () => {
 
   it("never sends a second HTTP request for the same (subscription, event) pair", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
-    const sub = await makeSubscription("https://subscriber.example/hook");
+    const sub = await makeSubscription("https://93.184.216.34/hook");
     const event = await makeEvent();
 
     await deliverWebhookEvent(sub, event);
@@ -72,7 +72,7 @@ describe("deliverWebhookEvent", () => {
 
   it("records a failed delivery (non-2xx) without throwing, and still dedupes on retry", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(new Response("nope", { status: 500 }));
-    const sub = await makeSubscription("https://subscriber.example/unreliable");
+    const sub = await makeSubscription("https://93.184.216.34/unreliable");
     const event = await makeEvent();
 
     await deliverWebhookEvent(sub, event);
@@ -90,7 +90,7 @@ describe("deliverWebhookEvent", () => {
 
   it("signs the payload with the subscription's own secret (different secrets, different signatures)", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
-    const subA = await makeSubscription("https://subscriber.example/a");
+    const subA = await makeSubscription("https://93.184.216.34/a");
     const event = await makeEvent();
     await deliverWebhookEvent(subA, event);
     const sigA = (fetchMock.mock.calls[0][1]?.headers as Record<string, string>)["X-Maatram-Signature"];

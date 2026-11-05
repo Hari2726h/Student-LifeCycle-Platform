@@ -34,12 +34,27 @@ type HashableEventFields = {
  * hash after it in the chain — that break is exactly what
  * verifyEventChain() below detects. */
 export function computeEventHash(prevHash: string, fields: HashableEventFields): string {
+  // A plain JSON round-trip before canonicalizing, not just stableStringify
+  // on the raw value — `undefined` object values/array elements and `Date`
+  // instances serialize one way via plain `JSON.stringify` (which is what
+  // Postgres's own JSONB storage does: drops `undefined` keys, turns array
+  // `undefined` into `null`, calls `Date.prototype.toJSON()`) but would
+  // stableStringify completely differently if hashed raw (an un-normalized
+  // `Date` has no enumerable own keys, so it would stringify as `{}`; a raw
+  // `undefined` would stringify as the bare word `undefined`, not valid
+  // JSON at all). Round-tripping first means the write-time hash (computed
+  // from the in-memory value before it's ever touched Postgres) and the
+  // verify-time hash (computed from the value *after* a JSONB round trip)
+  // always canonicalize the same already-normalized shape — so an
+  // unmodified event can never falsely appear tampered with just because
+  // of how a payload field happened to be typed.
+  const normalizedPayload = fields.payload === undefined ? null : JSON.parse(JSON.stringify(fields.payload));
   const canonical = [
     prevHash,
     fields.aggregateType,
     fields.aggregateId,
     fields.type,
-    stableStringify(fields.payload),
+    stableStringify(normalizedPayload),
     fields.occurredAt.toISOString(),
   ].join("|");
   return createHash("sha256").update(canonical).digest("hex");

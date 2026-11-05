@@ -58,14 +58,23 @@ async function removeQueuedVerification(id: number) {
   });
 }
 
-/** Flushes every queued submission to the server, oldest first. A
- * submission that fails (still offline, or a real validation error) stays
- * queued and stops the flush — we don't want a later item to post out of
- * order ahead of an earlier one for the same applicant. */
+/** Flushes every queued submission to the server, oldest first within each
+ * applicant (so a later visit never posts ahead of an earlier one for the
+ * *same* applicant). A network failure means we're still offline — stop
+ * the whole flush immediately, nothing else will succeed either. A
+ * server-rejected item (e.g. the applicant moved past verification, or
+ * got reassigned, while this was queued) is a *permanent* rejection for
+ * that one applicant, not a sign of being offline — skip just that
+ * applicant's remaining queued items and keep flushing everyone else's,
+ * rather than one stuck item blocking every other visit's sync. */
 export async function flushQueuedVerifications(): Promise<{ synced: number; remaining: number }> {
   const items = await listQueuedVerifications();
+  const blockedApplicantIds = new Set<string>();
   let synced = 0;
+
   for (const item of items) {
+    if (blockedApplicantIds.has(item.applicantId)) continue;
+
     const body = new FormData();
     body.set("applicantId", item.applicantId);
     for (const [k, v] of Object.entries(item.fields)) body.set(k, v);
@@ -73,11 +82,14 @@ export async function flushQueuedVerifications(): Promise<{ synced: number; rema
     try {
       const res = await fetch("/api/offline/verification", { method: "POST", body });
       const json = await res.json().catch(() => ({ ok: false }));
-      if (!res.ok || !json.ok) break;
+      if (!res.ok || !json.ok) {
+        blockedApplicantIds.add(item.applicantId);
+        continue;
+      }
       await removeQueuedVerification(item.id);
       synced++;
     } catch {
-      break; // still offline — stop, leave the rest queued
+      break; // still offline — stop, leave everything (for every applicant) queued
     }
   }
   const remaining = (await listQueuedVerifications()).length;

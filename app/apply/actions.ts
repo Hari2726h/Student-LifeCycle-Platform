@@ -320,7 +320,23 @@ export async function createAssistedApplication(formData: FormData) {
     },
   });
 
-  const existingApplicant = await prisma.applicant.findUnique({ where: { userId: familyUser.id }, select: { id: true } });
+  const existingApplicant = await prisma.applicant.findUnique({
+    where: { userId: familyUser.id },
+    select: { id: true, status: true, student: { select: { id: true } } },
+  });
+  // Re-entering this form for a phone number that already has an
+  // applicant record must never silently reset their progress — without
+  // this, a duplicate home-visit entry for someone already VERIFIED,
+  // interviewed, decided, or onboarded would upsert their status straight
+  // back to UNDER_VERIFICATION, undoing a committee decision outright.
+  const PRE_VERIFICATION_STATUSES = ["DRAFT", "SUBMITTED", "UNDER_VERIFICATION"];
+  if (existingApplicant && !PRE_VERIFICATION_STATUSES.includes(existingApplicant.status)) {
+    redirect(`/staff/applicants/${existingApplicant.id}?error=This+applicant+already+has+progress+beyond+verification+%E2%80%94+edit+their+record+directly+instead`);
+  }
+  if (existingApplicant?.student) {
+    redirect(`/staff/applicants/${existingApplicant.id}?error=This+applicant+has+already+been+onboarded+as+a+student`);
+  }
+
   let cycleId: string | undefined;
   if (!existingApplicant) {
     const openCycle = await getOpenCycle();

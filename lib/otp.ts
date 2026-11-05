@@ -3,9 +3,17 @@ import { Role } from "@prisma/client";
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
+// A 6-digit code has a million possibilities — without a guess limit,
+// nothing stops brute-forcing it within its 5-minute TTL. 5 wrong guesses
+// invalidates the code outright, same as a real OTP provider would.
+const MAX_OTP_ATTEMPTS = 5;
 
+// The Web Crypto API (not Node's `crypto` module, which isn't available
+// in the Edge Runtime — this file is imported by middleware.ts via
+// auth.ts) — `getRandomValues` works in both Node and Edge.
 function generateCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  const [value] = crypto.getRandomValues(new Uint32Array(1));
+  return String(100000 + (value % 900000));
 }
 
 /**
@@ -36,7 +44,7 @@ export async function requestOtp(
 
   const user = await prisma.user.upsert({
     where: { phone },
-    update: { otpCode: code, otpExpiresAt: expiresAt },
+    update: { otpCode: code, otpExpiresAt: expiresAt, otpAttempts: 0 },
     create: {
       phone,
       name: `Applicant ${phone.slice(-4)}`,
@@ -53,12 +61,20 @@ export async function requestOtp(
 export async function verifyOtp(phone: string, code: string) {
   const user = await prisma.user.findUnique({ where: { phone } });
   if (!user || !user.otpCode || !user.otpExpiresAt) return null;
-  if (user.otpCode !== code) return null;
   if (user.otpExpiresAt.getTime() < Date.now()) return null;
+  if (user.otpAttempts >= MAX_OTP_ATTEMPTS) return null;
+
+  if (user.otpCode !== code) {
+    // Counts even a too-late guess against a code that's about to expire
+    // anyway — simplest to reason about, and the TTL check above already
+    // short-circuits genuinely expired codes before this ever increments.
+    await prisma.user.update({ where: { id: user.id }, data: { otpAttempts: { increment: 1 } } });
+    return null;
+  }
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { otpCode: null, otpExpiresAt: null },
+    data: { otpCode: null, otpExpiresAt: null, otpAttempts: 0 },
   });
 
   return user;

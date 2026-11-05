@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { resetWorkerBookmark } from "@/lib/workers/engine";
 import { runRiskFlagNotifier, RISK_FLAG_WORKER_NAME } from "@/lib/workers/risk-flag-notifier";
-import { runWebhookDispatcher, WEBHOOK_WORKER_NAME } from "@/lib/webhooks";
+import { runWebhookDispatcher, webhookBookmarkName } from "@/lib/webhooks";
 import { recomputeAllProfiles } from "@/lib/alumni-career";
 
 /** The live version of this app's whole thesis: every one of these tables
@@ -23,7 +23,10 @@ export async function wipeAndReplayDerivedState() {
   ]);
   await prisma.alumniProfile.updateMany({ data: { currentCompany: null, currentRole: null } });
   await resetWorkerBookmark(RISK_FLAG_WORKER_NAME, 0);
-  await resetWorkerBookmark(WEBHOOK_WORKER_NAME, 0);
+  // Each webhook subscription has its own bookmark (lib/webhooks.ts) —
+  // reset all of them, not a single shared one.
+  const subscriptions = await prisma.webhookSubscription.findMany({ select: { id: true } });
+  await Promise.all(subscriptions.map((sub) => resetWorkerBookmark(webhookBookmarkName(sub.id), 0)));
 
   const [riskFlagResult, webhookResult, profilesResult] = await Promise.all([
     runRiskFlagNotifier(),

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { checkIdempotencyKey, recordIdempotencyKey } from "@/lib/idempotency";
+import { claimIdempotencyKey, finalizeIdempotencyKey } from "@/lib/idempotency";
 
 let keys: string[] = [];
 
@@ -15,40 +15,45 @@ function freshKey() {
   return key;
 }
 
-describe("idempotency keys — guards the HTTP boundary, not just the DB state", () => {
-  it("a never-seen key is not already processed", async () => {
-    const result = await checkIdempotencyKey(freshKey());
-    expect(result.seen).toBe(false);
+describe("idempotency keys — claim-first, so concurrent duplicates can't both run", () => {
+  it("a never-seen key claims successfully", async () => {
+    const result = await claimIdempotencyKey(freshKey(), "BULK_SHORTLIST");
+    expect(result.claimed).toBe(true);
   });
 
-  it("a key recorded once is replayed with its original result on a second check", async () => {
+  it("a finalized key is replayed with its stored result on a second claim attempt", async () => {
     const key = freshKey();
-    let result = await checkIdempotencyKey(key);
-    expect(result.seen).toBe(false);
+    const first = await claimIdempotencyKey(key, "BULK_SHORTLIST");
+    expect(first.claimed).toBe(true);
+    await finalizeIdempotencyKey(key, "Shortlist: updated 3");
 
-    await recordIdempotencyKey(key, "BULK_SHORTLIST", "Shortlist: updated 3");
-
-    result = await checkIdempotencyKey(key);
-    expect(result.seen).toBe(true);
-    expect(result.resultMessage).toBe("Shortlist: updated 3");
+    const second = await claimIdempotencyKey(key, "BULK_SHORTLIST");
+    expect(second.claimed).toBe(false);
+    if (!second.claimed) expect(second.resultMessage).toBe("Shortlist: updated 3");
   });
 
-  it("recording the same key twice (simulated race) does not throw and keeps the first result", async () => {
+  it("two concurrent claims for the same key — only one wins, the other never runs the transition", async () => {
     const key = freshKey();
-    await recordIdempotencyKey(key, "BULK_SELECT", "Select: updated 1");
-    // A second, concurrent writer loses the unique-constraint race —
-    // recordIdempotencyKey swallows that instead of crashing the request.
-    await expect(recordIdempotencyKey(key, "BULK_SELECT", "Select: updated 1 (duplicate attempt)")).resolves.toBeUndefined();
+    const [a, b] = await Promise.all([claimIdempotencyKey(key, "BULK_SELECT"), claimIdempotencyKey(key, "BULK_SELECT")]);
+    const claimedCount = [a, b].filter((r) => r.claimed).length;
+    expect(claimedCount).toBe(1);
 
     const rows = await prisma.idempotencyKey.findMany({ where: { key } });
     expect(rows).toHaveLength(1);
-    expect(rows[0].resultMessage).toBe("Select: updated 1");
   });
 
-  it("an empty key (no idempotency requested) is never treated as seen", async () => {
-    const result = await checkIdempotencyKey("");
-    expect(result.seen).toBe(false);
-    await recordIdempotencyKey("", "NOOP", "should not persist");
+  it("the losing claimant sees a sensible message even before the winner has finalized", async () => {
+    const key = freshKey();
+    await claimIdempotencyKey(key, "BULK_REJECT");
+    const loser = await claimIdempotencyKey(key, "BULK_REJECT");
+    expect(loser.claimed).toBe(false);
+    if (!loser.claimed) expect(loser.resultMessage).toMatch(/still being processed/i);
+  });
+
+  it("an empty key (no idempotency requested) always claims and never persists", async () => {
+    const result = await claimIdempotencyKey("", "NOOP");
+    expect(result.claimed).toBe(true);
+    await finalizeIdempotencyKey("", "should not persist");
     const rows = await prisma.idempotencyKey.findMany({ where: { key: "" } });
     expect(rows).toHaveLength(0);
   });
@@ -56,8 +61,8 @@ describe("idempotency keys — guards the HTTP boundary, not just the DB state",
   it("two different keys for the same action never collide", async () => {
     const keyA = freshKey();
     const keyB = freshKey();
-    await recordIdempotencyKey(keyA, "BULK_REJECT", "Reject: updated 2");
-    const resultB = await checkIdempotencyKey(keyB);
-    expect(resultB.seen).toBe(false);
+    await claimIdempotencyKey(keyA, "BULK_REJECT");
+    const resultB = await claimIdempotencyKey(keyB, "BULK_REJECT");
+    expect(resultB.claimed).toBe(true);
   });
 });

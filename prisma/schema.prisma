@@ -155,6 +155,11 @@ model User {
   // see lib/otp.ts; the code is surfaced in the UI instead of texted out).
   otpCode         String?
   otpExpiresAt    DateTime?
+  // Failed verifyOtp() attempts against the current otpCode — invalidates
+  // the code after a handful of wrong guesses so a 6-digit code isn't
+  // brute-forceable within its 5-minute TTL (10^6 possibilities with no
+  // throttle otherwise). Reset to 0 whenever a fresh code is issued.
+  otpAttempts     Int       @default(0)
 
   // Volunteers' coverage area — the basis for geo-assigning the
   // verification queue. Unused by other roles.

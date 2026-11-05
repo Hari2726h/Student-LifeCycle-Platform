@@ -37,15 +37,24 @@ export function reduceTimelineAt(events: Event[], uptoIndex: number): TimeTravel
   return state;
 }
 
+// String(p.toStatus ?? state.x) looks like a safe fallback chain, but when
+// BOTH sides are null/undefined (a malformed payload on the very first
+// such event), String(null) is the literal three-character string "null"
+// — a truthy value that defeats every `?? "—"` fallback downstream. This
+// keeps missing/malformed values as real `null`, not the word "null".
+function stringOrNull(value: unknown, fallback: string | null): string | null {
+  return typeof value === "string" && value ? value : fallback;
+}
+
 function applyEvent(state: TimeTravelState, event: Event): TimeTravelState {
   const p = (event.payload ?? {}) as Record<string, unknown>;
   switch (event.type) {
     case "APPLICANT_STATUS_CHANGED":
-      return { ...state, applicantStatus: String(p.toStatus ?? state.applicantStatus) };
+      return { ...state, applicantStatus: stringOrNull(p.toStatus, state.applicantStatus) };
     case "STUDENT_ONBOARDED":
       return { ...state, isStudent: true, studentStatus: "ONBOARDING" };
     case "STUDENT_STATUS_CHANGED":
-      return { ...state, isStudent: true, studentStatus: String(p.toStatus ?? state.studentStatus) };
+      return { ...state, isStudent: true, studentStatus: stringOrNull(p.toStatus, state.studentStatus) };
     case "MENTOR_LOG_CREATED":
       return { ...state, checkIns: state.checkIns + 1 };
     case "RISK_FLAG_LOGGED":

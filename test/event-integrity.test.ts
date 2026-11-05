@@ -36,6 +36,23 @@ describe("event hash chain", () => {
     expect(a).toBe(b);
   });
 
+  it("hashes a payload containing undefined/Date values the same way before and after a JSONB round trip", async () => {
+    // Reproduces the exact latent bug this normalization step exists to
+    // prevent: a raw Date has no enumerable own keys (so a naive
+    // stringifier sees "{}"), and a raw `undefined` isn't valid JSON at
+    // all — but Postgres's JSONB storage silently converts the Date to an
+    // ISO string and drops undefined keys on write. Without normalizing
+    // first, the write-time hash and the read-back verify-time hash would
+    // disagree on content that was never touched.
+    const occurredAt = new Date("2026-01-01T00:00:00.000Z");
+    const rawPayload = { note: undefined, decidedAt: new Date("2026-02-02T00:00:00.000Z"), status: "OK" } as unknown as Record<string, unknown>;
+    const roundTripped = JSON.parse(JSON.stringify(rawPayload));
+
+    const hashFromRaw = computeEventHash(GENESIS_HASH, { aggregateType: "Test", aggregateId: "x", type: "T", payload: rawPayload, occurredAt });
+    const hashFromRoundTripped = computeEventHash(GENESIS_HASH, { aggregateType: "Test", aggregateId: "x", type: "T", payload: roundTripped, occurredAt });
+    expect(hashFromRaw).toBe(hashFromRoundTripped);
+  });
+
   it("a freshly appended chain verifies as valid", async () => {
     const aggregateId = freshAggregateId();
     await prisma.$transaction(async (tx) => {

@@ -14,9 +14,23 @@ async function requireRole(roles: string[]) {
   return session.user;
 }
 
+// Once an applicant has a final outcome (or has already been onboarded),
+// none of the interview-stage actions below should be able to move them
+// backward — re-scheduling, re-scoring, or re-deciding an already-decided
+// applicant would silently undo a committee decision or orphan a Student
+// record that already points at them.
+const FINAL_APPLICANT_STATUSES = ["ACCEPTED", "REJECTED", "WAITLISTED", "WITHDRAWN"];
+
 /** Books the applicant into a committee member's declared slot (panel
  * availability) rather than a freely-typed date/time — a slot can hold
- * `capacity` applicants before it's full. */
+ * `capacity` applicants before it's full.
+ *
+ * The capacity check and the booking happen in the same transaction, with
+ * a row lock on the slot — reading the count outside the transaction (the
+ * original approach) let two committee members both see "4/5 booked" and
+ * both book the 5th seat, overbooking the slot. `SELECT ... FOR UPDATE`
+ * makes the second transaction wait for the first to commit, then see the
+ * updated count. */
 export async function scheduleInterview(applicantId: string, formData: FormData) {
   const user = await requireRole(["COMMITTEE"]);
 
@@ -25,33 +39,36 @@ export async function scheduleInterview(applicantId: string, formData: FormData)
     redirect(`/staff/applicants/${applicantId}?error=Select+an+available+slot`);
   }
 
-  const slot = await prisma.interviewSlot.findUnique({
-    where: { id: slotId },
-    include: { _count: { select: { interviews: true } } },
-  });
-  if (!slot) {
-    redirect(`/staff/applicants/${applicantId}?error=That+slot+no+longer+exists`);
-  }
-  if (slot._count.interviews >= slot.capacity) {
-    redirect(`/staff/applicants/${applicantId}?error=That+slot+is+already+full`);
+  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId }, include: { student: true } });
+  if (FINAL_APPLICANT_STATUSES.includes(applicant.status) || applicant.student) {
+    redirect(`/staff/applicants/${applicantId}?error=This+applicant+already+has+a+final+outcome`);
   }
 
-  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
-  const existingInterview = await prisma.interviewRecord.findUnique({ where: { applicantId } });
-  // A genuine reschedule to a different slot is still worth logging even if
-  // status doesn't change; a resubmission of the exact same slot (a
-  // double-click race — the UI has no path to call this once already
-  // scheduled) is not.
-  const isMeaningfulChange = !existingInterview || existingInterview.slotId !== slot.id;
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "InterviewSlot" WHERE id = ${slotId} FOR UPDATE`;
 
-  await prisma.$transaction(async (tx) => {
+    const slot = await tx.interviewSlot.findUnique({
+      where: { id: slotId },
+      include: { _count: { select: { interviews: true } } },
+    });
+    if (!slot) return { ok: false as const, error: "That slot no longer exists" };
+
+    const existingInterview = await tx.interviewRecord.findUnique({ where: { applicantId } });
+    // A genuine reschedule to a different slot is still worth logging even
+    // if status doesn't change; a resubmission of the exact same slot (a
+    // double-click race) is not, and doesn't count against capacity again.
+    const isNewOccupant = !existingInterview || existingInterview.slotId !== slot.id;
+    if (isNewOccupant && slot._count.interviews >= slot.capacity) {
+      return { ok: false as const, error: "That slot is already full" };
+    }
+
     await tx.interviewRecord.upsert({
       where: { applicantId },
       create: { applicantId, slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
       update: { slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
     });
     await tx.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEW_SCHEDULED" } });
-    if (isMeaningfulChange) {
+    if (isNewOccupant) {
       await appendEvent(tx, {
         aggregateType: "Applicant",
         aggregateId: applicantId,
@@ -59,8 +76,12 @@ export async function scheduleInterview(applicantId: string, formData: FormData)
         payload: { fromStatus: applicant.status, toStatus: "INTERVIEW_SCHEDULED", actorId: user.id, action: "INTERVIEW_SCHEDULED", slotId: slot.id },
       });
     }
+    return { ok: true as const };
   });
 
+  if (!result.ok) {
+    redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(result.error)}`);
+  }
   redirect(`/staff/applicants/${applicantId}`);
 }
 
@@ -75,7 +96,10 @@ const scoreSchema = z.object({
 export async function submitScore(applicantId: string, formData: FormData) {
   const user = await requireRole(["COMMITTEE"]);
 
-  const interview = await prisma.interviewRecord.findUniqueOrThrow({ where: { applicantId } });
+  const interview = await prisma.interviewRecord.findUnique({ where: { applicantId } });
+  if (!interview) {
+    redirect(`/staff/applicants/${applicantId}?error=No+interview+scheduled+yet`);
+  }
   if (interview.decision !== "PENDING") {
     redirect(`/staff/applicants/${applicantId}?error=Decision+already+recorded`);
   }
@@ -91,7 +115,6 @@ export async function submitScore(applicantId: string, formData: FormData) {
     redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
   }
   const data = parsed.data;
-  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
 
   await prisma.$transaction(async (tx) => {
     await tx.interviewScore.upsert({
@@ -99,6 +122,11 @@ export async function submitScore(applicantId: string, formData: FormData) {
       create: { interviewId: interview.id, panelistId: user.id, ...data },
       update: { ...data },
     });
+    // Read inside the transaction, not before it, so the fromStatus this
+    // records reflects what was actually true at write time — not a
+    // snapshot that could already be stale if another panelist's
+    // submission (or any other concurrent action) committed first.
+    const applicant = await tx.applicant.findUniqueOrThrow({ where: { id: applicantId } });
     await tx.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEWED" } });
     // Only the panelist whose score first moves the applicant into
     // INTERVIEWED causes a real transition — every other panelist scoring
@@ -129,22 +157,27 @@ export async function recordDecision(applicantId: string, formData: FormData) {
     where: { applicantId },
     include: { scores: true },
   });
-
-  // Append-only: a decision, once recorded, is never overwritten by this action.
-  if (interview.decision !== "PENDING") {
-    redirect(`/staff/applicants/${applicantId}`);
-  }
   if (interview.scores.length === 0) {
     redirect(`/staff/applicants/${applicantId}?error=At+least+one+scorecard+is+required+first`);
   }
 
-  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
+  // Append-only: a decision, once recorded, is never overwritten by this
+  // action. The pre-check above is just a fast path for the UI — the real
+  // guard is the conditional update inside the transaction below, which
+  // only ever flips decision PENDING -> <decision> for exactly one caller.
+  // Without that, two committee members deciding within the same instant
+  // could both read "PENDING", both pass, and the second write would
+  // silently overwrite the first's decision (last write wins) while also
+  // appending a second, incorrectly-chained status-change event.
+  const result = await prisma.$transaction(async (tx) => {
+    const applicant = await tx.applicant.findUniqueOrThrow({ where: { id: applicantId } });
 
-  await prisma.$transaction(async (tx) => {
-    await tx.interviewRecord.update({
-      where: { applicantId },
+    const updated = await tx.interviewRecord.updateMany({
+      where: { applicantId, decision: "PENDING" },
       data: { decision, decidedAt: new Date(), decidedById: user.id },
     });
+    if (updated.count === 0) return { ok: false as const, alreadyDecided: true };
+
     await tx.applicant.update({ where: { id: applicantId }, data: { status: decision } });
     await appendEvent(tx, {
       aggregateType: "Applicant",
@@ -152,8 +185,12 @@ export async function recordDecision(applicantId: string, formData: FormData) {
       type: "APPLICANT_STATUS_CHANGED",
       payload: { fromStatus: applicant.status, toStatus: decision, actorId: user.id, action: "COMMITTEE_DECISION" },
     });
+    return { ok: true as const };
   });
 
+  if (!result.ok) {
+    redirect(`/staff/applicants/${applicantId}`);
+  }
   redirect(`/staff/applicants/${applicantId}`);
 }
 

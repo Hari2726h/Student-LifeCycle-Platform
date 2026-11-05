@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { appendEvent } from "@/lib/events";
-import { checkIdempotencyKey, recordIdempotencyKey } from "@/lib/idempotency";
+import { claimIdempotencyKey, finalizeIdempotencyKey } from "@/lib/idempotency";
 import type { ApplicationStatus } from "@prisma/client";
 
 async function requireStaff() {
@@ -35,9 +35,9 @@ async function runBulkTransition(
   const staff = await requireStaff();
 
   const idempotencyKey = String(formData.get("idempotencyKey") ?? "");
-  const seen = await checkIdempotencyKey(idempotencyKey);
-  if (seen.seen) {
-    redirect(`/staff?result=${encodeURIComponent(seen.resultMessage)}`);
+  const claim = await claimIdempotencyKey(idempotencyKey, actionLabel);
+  if (!claim.claimed) {
+    redirect(`/staff?result=${encodeURIComponent(claim.resultMessage)}`);
   }
 
   const applicantIds = formData.getAll("applicantIds").map(String).filter(Boolean);
@@ -76,7 +76,7 @@ async function runBulkTransition(
     `${actionLabel.replace("BULK_", "")}: updated ${eligible.length}` +
     (skipped > 0 ? `, skipped ${skipped} (wrong status for this action)` : "");
 
-  await recordIdempotencyKey(idempotencyKey, actionLabel, message);
+  await finalizeIdempotencyKey(idempotencyKey, message);
 
   redirect(`/staff?result=${encodeURIComponent(message)}`);
 }
