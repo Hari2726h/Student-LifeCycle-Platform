@@ -13,6 +13,7 @@ function makeEvent(overrides: Partial<Event>): Event {
     occurredAt: new Date(),
     hash: "h",
     prevHash: "p",
+    idempotencyKey: null,
     ...overrides,
   };
 }
