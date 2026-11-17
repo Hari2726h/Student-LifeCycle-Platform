@@ -19,12 +19,12 @@ export default async function CallVerifications({ searchParams }: { searchParams
   });
   const applicantIds = [...new Set(assignments.map((assignment) => assignment.activity.applicantId).filter((id): id is string => Boolean(id)))];
   const legacyApplicants = await prisma.applicant.findMany({
-    where: { volunteerId: session.user.id, status: { notIn: ["DRAFT", "WITHDRAWN"] } },
+    where: { volunteerId: session.user.id, status: { in: ["SUBMITTED", "UNDER_VERIFICATION"] } },
     select: { id: true, fullName: true, phone: true, email: true, district: true, status: true },
     orderBy: { updatedAt: "desc" },
   });
   const activityApplicants = applicantIds.length ? await prisma.applicant.findMany({
-    where: { id: { in: applicantIds } },
+    where: { id: { in: applicantIds }, status: { in: ["SUBMITTED", "UNDER_VERIFICATION"] } },
     select: { id: true, fullName: true, phone: true, email: true, district: true, status: true },
   }) : [];
   const applicantMap = new Map([...legacyApplicants, ...activityApplicants].map((applicant) => [applicant.id, applicant]));
@@ -52,7 +52,7 @@ export default async function CallVerifications({ searchParams }: { searchParams
             <Select label="Student application" name="applicantId" required placeholder="Select an assigned applicant" defaultValue={selectedActivity?.activity.applicantId ?? ""}>
               {applicants.map((applicant) => <option key={applicant.id} value={applicant.id}>{applicant.fullName} · {applicant.phone} · {applicant.email ?? "no email"} · {applicant.district}</option>)}
             </Select>
-            <div className="grid gap-4 sm:grid-cols-2"><Field label="Call date and time" name="calledAt" type="datetime-local" required /><Select label="Call status" name="status" required placeholder="Select status"><option value="CONNECTED">Connected</option><option value="NOT_REACHABLE">Not reachable</option><option value="SWITCHED_OFF">Switched off</option><option value="CALL_LATER">Call later</option><option value="WRONG_NUMBER">Wrong number</option><option value="VERIFICATION_COMPLETED">Verification completed</option></Select><Field label="Alternate mobile" name="alternateMobile" type="tel" /><Field label="Person who answered" name="personAnswered" /></div>
+            <div className="grid gap-4 sm:grid-cols-2"><Field label="Call date and time" name="calledAt" type="datetime-local" required /><Select label="Call status" name="status" required placeholder="Select status"><option value="CONNECTED">Connected</option><option value="NOT_REACHABLE">Not reachable</option><option value="SWITCHED_OFF">Switched off</option><option value="CALL_LATER">Call later</option><option value="WRONG_NUMBER">Wrong number</option><option value="VERIFICATION_COMPLETED">Verification completed</option><option value="REJECTED">Reject application</option></Select><Field label="Alternate mobile" name="alternateMobile" type="tel" /><Field label="Person who answered" name="personAnswered" /></div>
             <fieldset className="rounded-md border border-border p-3"><legend className="px-1 text-sm font-medium">Call verification checklist</legend><div className="grid gap-2 text-sm sm:grid-cols-2">{[["identityConfirmed", "Student identity confirmed"], ["addressConfirmed", "Address confirmed"], ["familyConfirmed", "Family details confirmed"], ["incomeConfirmed", "Income details confirmed"], ["educationConfirmed", "Education details confirmed"], ["admissionInterest", "Interested in admission"]].map(([name, label]) => <label key={name} className="flex gap-2"><input type="checkbox" name={name} />{label}</label>)}</div></fieldset>
             <div className="grid gap-4 sm:grid-cols-2"><Field label="Student availability" name="studentAvailability" /><Field label="Next follow-up date" name="nextFollowUpAt" type="datetime-local" /></div>
             <label className="flex gap-2 text-sm"><input type="checkbox" name="followUpRequired" /> Follow-up required</label>

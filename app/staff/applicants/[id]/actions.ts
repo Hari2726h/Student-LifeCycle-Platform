@@ -1,10 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { appendEvent, isRealStatusChange } from "@/lib/events";
+import { notifyApplicant } from "@/lib/notifications";
 
 async function requireRole(roles: string[]) {
   const session = await auth();
@@ -12,6 +14,26 @@ async function requireRole(roles: string[]) {
     redirect("/login");
   }
   return session.user;
+}
+
+export async function addApplicantRemark(applicantId: string, formData: FormData) {
+  const staff = await requireRole(["STAFF"]);
+  const parsed = z.object({
+    note: z.string().trim().min(3).max(3000),
+    idempotencyKey: z.string().uuid(),
+  }).safeParse({ note: formData.get("note"), idempotencyKey: formData.get("idempotencyKey") });
+  if (!parsed.success) redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Enter a remark")}`);
+  await prisma.$transaction(async (tx) => {
+    await tx.applicant.findUniqueOrThrow({ where: { id: applicantId }, select: { id: true } });
+    await appendEvent(tx, {
+      aggregateType: "Applicant", aggregateId: applicantId,
+      type: "APPLICANT_INTERNAL_REMARK_ADDED",
+      payload: { note: parsed.data.note, actorId: staff.id },
+      idempotencyKey: `applicant-remark:${parsed.data.idempotencyKey}`,
+    });
+  });
+  revalidatePath(`/staff/applicants/${applicantId}`);
+  redirect(`/staff/applicants/${applicantId}`);
 }
 
 // Once an applicant has a final outcome (or has already been onboarded),
@@ -64,17 +86,18 @@ export async function scheduleInterview(applicantId: string, formData: FormData)
 
     await tx.interviewRecord.upsert({
       where: { applicantId },
-      create: { applicantId, slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
-      update: { slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location },
+      create: { applicantId, slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location, meetingUrl: slot.meetingUrl },
+      update: { slotId: slot.id, scheduledAt: slot.scheduledAt, location: slot.location, meetingUrl: slot.meetingUrl },
     });
     await tx.applicant.update({ where: { id: applicantId }, data: { status: "INTERVIEW_SCHEDULED" } });
     if (isNewOccupant) {
-      await appendEvent(tx, {
+      const event = await appendEvent(tx, {
         aggregateType: "Applicant",
         aggregateId: applicantId,
         type: "APPLICANT_STATUS_CHANGED",
         payload: { fromStatus: applicant.status, toStatus: "INTERVIEW_SCHEDULED", actorId: user.id, action: "INTERVIEW_SCHEDULED", slotId: slot.id },
       });
+      await notifyApplicant(tx, applicantId, event.id, "Online interview scheduled", `Your interview is scheduled for ${slot.scheduledAt.toLocaleString()} at ${slot.location}.`);
     }
     return { ok: true as const };
   });
@@ -149,7 +172,7 @@ export async function recordDecision(applicantId: string, formData: FormData) {
   const user = await requireRole(["COMMITTEE"]);
 
   const decision = formData.get("decision");
-  if (decision !== "ACCEPTED" && decision !== "REJECTED" && decision !== "WAITLISTED") {
+  if (decision !== "SHORTLISTED" && decision !== "REJECTED" && decision !== "WAITLISTED") {
     redirect(`/staff/applicants/${applicantId}?error=Invalid+decision`);
   }
 
@@ -159,6 +182,10 @@ export async function recordDecision(applicantId: string, formData: FormData) {
   });
   if (interview.scores.length === 0) {
     redirect(`/staff/applicants/${applicantId}?error=At+least+one+scorecard+is+required+first`);
+  }
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (decision === "REJECTED" && reason.length < 3) {
+    redirect(`/staff/applicants/${applicantId}?error=Enter+a+rejection+reason`);
   }
 
   // Append-only: a decision, once recorded, is never overwritten by this
@@ -174,23 +201,126 @@ export async function recordDecision(applicantId: string, formData: FormData) {
 
     const updated = await tx.interviewRecord.updateMany({
       where: { applicantId, decision: "PENDING" },
-      data: { decision, decidedAt: new Date(), decidedById: user.id },
+      data: { decision, decisionReason: reason || null, decidedAt: new Date(), decidedById: user.id },
     });
     if (updated.count === 0) return { ok: false as const, alreadyDecided: true };
 
     await tx.applicant.update({ where: { id: applicantId }, data: { status: decision } });
-    await appendEvent(tx, {
+    const event = await appendEvent(tx, {
       aggregateType: "Applicant",
       aggregateId: applicantId,
       type: "APPLICANT_STATUS_CHANGED",
-      payload: { fromStatus: applicant.status, toStatus: decision, actorId: user.id, action: "COMMITTEE_DECISION" },
+      payload: { fromStatus: applicant.status, toStatus: decision, actorId: user.id, action: "COMMITTEE_DECISION", reason: reason || null },
     });
+    if (decision === "REJECTED") {
+      await appendEvent(tx, {
+        aggregateType: "Applicant", aggregateId: applicantId, type: "APPLICANT_REJECTED",
+        payload: { stage: "ONLINE_INTERVIEW", reason, actorId: user.id },
+        idempotencyKey: `applicant-rejected:interview:${interview.id}`,
+      });
+    }
+    const notificationTitle = decision === "REJECTED" ? "Application update" : "Final meeting next step";
+    const notificationBody = decision === "REJECTED"
+      ? `Your application was not selected after the interview review. Reason: ${reason}`
+      : decision === "SHORTLISTED"
+        ? "You passed the online interview. Maatram staff will contact you with your final offline meeting schedule."
+        : "Your application has been placed on the waitlist. Maatram will contact you if your status changes.";
+    await notifyApplicant(tx, applicantId, event.id, notificationTitle, notificationBody);
     return { ok: true as const };
   });
 
   if (!result.ok) {
     redirect(`/staff/applicants/${applicantId}`);
   }
+  redirect(`/staff/applicants/${applicantId}`);
+}
+
+const offlineMeetingSchema = z.object({
+  scheduledAt: z.coerce.date(),
+  location: z.string().trim().min(3).max(300),
+});
+
+export async function scheduleOfflineMeeting(applicantId: string, formData: FormData) {
+  const staff = await requireRole(["STAFF"]);
+  const parsed = offlineMeetingSchema.safeParse({
+    scheduledAt: formData.get("scheduledAt"),
+    location: formData.get("location"),
+  });
+  if (!parsed.success) redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Check the meeting details")}`);
+
+  const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
+  if (applicant.status !== "SHORTLISTED") redirect(`/staff/applicants/${applicantId}?error=Only+applicants+who+passed+the+online+interview+can+be+scheduled`);
+
+  await prisma.$transaction(async (tx) => {
+    const current = await tx.offlineMeeting.findUnique({ where: { applicantId } });
+    if (current && ["SELECTED", "REJECTED"].includes(current.outcome)) return;
+    const meeting = await tx.offlineMeeting.upsert({
+      where: { applicantId },
+      create: { applicantId, scheduledAt: parsed.data.scheduledAt, location: parsed.data.location, coordinatorId: staff.id, outcome: "SCHEDULED" },
+      update: { scheduledAt: parsed.data.scheduledAt, location: parsed.data.location, coordinatorId: staff.id, outcome: "SCHEDULED" },
+    });
+    const event = await appendEvent(tx, {
+      aggregateType: "Applicant", aggregateId: applicantId,
+      type: "OFFLINE_MEETING_SCHEDULED",
+      payload: { meetingId: meeting.id, scheduledAt: meeting.scheduledAt?.toISOString(), location: meeting.location, actorId: staff.id },
+    });
+    await notifyApplicant(tx, applicantId, event.id, "Final offline meeting scheduled", `Your final meeting is scheduled for ${parsed.data.scheduledAt.toLocaleString()} at ${parsed.data.location}.`);
+  });
+  redirect(`/staff/applicants/${applicantId}`);
+}
+
+const offlineDecisionSchema = z.object({
+  decision: z.enum(["ACCEPTED", "REJECTED"]),
+  reason: z.string().trim().max(1500),
+  remarks: z.string().trim().max(3000),
+});
+
+export async function recordOfflineMeetingDecision(applicantId: string, formData: FormData) {
+  const staff = await requireRole(["STAFF"]);
+  const parsed = offlineDecisionSchema.safeParse({
+    decision: formData.get("decision"),
+    reason: formData.get("reason") ?? "",
+    remarks: formData.get("remarks") ?? "",
+  });
+  if (!parsed.success) redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid decision")}`);
+  if (parsed.data.decision === "REJECTED" && parsed.data.reason.length < 3) redirect(`/staff/applicants/${applicantId}?error=Enter+a+rejection+reason`);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const applicant = await tx.applicant.findUniqueOrThrow({ where: { id: applicantId } });
+    const meeting = await tx.offlineMeeting.findUnique({ where: { applicantId } });
+    if (applicant.status !== "SHORTLISTED" || !meeting?.scheduledAt) return false;
+    const updated = await tx.offlineMeeting.updateMany({
+      where: { applicantId, outcome: { in: ["SCHEDULED", "RESCHEDULED", "COMPLETED"] } },
+      data: {
+        attended: formData.get("attended") === "on",
+        remarks: parsed.data.remarks || null,
+        outcome: parsed.data.decision === "ACCEPTED" ? "SELECTED" : "REJECTED",
+        decisionReason: parsed.data.reason || null,
+        decidedAt: new Date(), decidedById: staff.id,
+      },
+    });
+    if (updated.count === 0) return false;
+    await tx.applicant.update({ where: { id: applicantId }, data: { status: parsed.data.decision } });
+    const event = await appendEvent(tx, {
+      aggregateType: "Applicant", aggregateId: applicantId,
+      type: parsed.data.decision === "ACCEPTED" ? "APPLICANT_SELECTED" : "APPLICANT_REJECTED",
+      payload: { fromStatus: applicant.status, toStatus: parsed.data.decision, stage: "OFFLINE_MEETING", reason: parsed.data.reason || null, actorId: staff.id, attended: formData.get("attended") === "on" },
+    });
+    await appendEvent(tx, {
+      aggregateType: "Applicant", aggregateId: applicantId, type: "APPLICANT_STATUS_CHANGED",
+      payload: { fromStatus: applicant.status, toStatus: parsed.data.decision, action: "OFFLINE_MEETING_DECISION", reason: parsed.data.reason || null, actorId: staff.id },
+      idempotencyKey: `offline-meeting-status:${meeting.id}`,
+    });
+    await notifyApplicant(
+      tx, applicantId, event.id,
+      parsed.data.decision === "ACCEPTED" ? "You have been selected" : "Application update",
+      parsed.data.decision === "ACCEPTED"
+        ? "Your final meeting is complete and you have been selected. Maatram staff will guide you through student onboarding."
+        : `Your application was not selected after the final meeting. Reason: ${parsed.data.reason}`,
+    );
+    return true;
+  });
+  if (!result) redirect(`/staff/applicants/${applicantId}?error=This+applicant+is+not+ready+for+a+final+meeting+decision`);
   redirect(`/staff/applicants/${applicantId}`);
 }
 

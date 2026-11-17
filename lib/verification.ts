@@ -2,6 +2,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { appendEvent, isRealStatusChange } from "@/lib/events";
+import { notifyApplicant } from "@/lib/notifications";
 
 export const verificationSchema = z.object({
   incomeBandVerified: z.coerce.boolean(),
@@ -60,6 +61,9 @@ export async function submitVerificationCore(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const data = parsed.data;
+  if (data.decision === "REJECTED" && (!data.notes || data.notes.trim().length < 3)) {
+    return { ok: false, error: "Add a rejection reason in the notes" };
+  }
   const idempotencyKey = data.idempotencyKey ?? randomUUID();
   const priorReport = await prisma.physicalVerificationReport.findUnique({ where: { idempotencyKey }, select: { id: true } });
   if (priorReport) return { ok: true };
@@ -89,13 +93,23 @@ export async function submitVerificationCore(
       update: { visitDate: new Date(), ...data },
     });
     await tx.applicant.update({ where: { id: applicantId }, data: { status: nextStatus } });
-    await appendEvent(tx, {
+    const reportEvent = await appendEvent(tx, {
       aggregateType: "Applicant",
       aggregateId: applicantId,
       type: "PHYSICAL_VERIFICATION_SUBMITTED",
       payload: { reportId: report.id, decision: data.decision, actorId: volunteerId },
       idempotencyKey: `pv:${idempotencyKey}`,
     });
+    if (data.decision === "REJECTED") {
+      await appendEvent(tx, {
+        aggregateType: "Applicant", aggregateId: applicantId, type: "APPLICANT_REJECTED",
+        payload: { stage: "PHYSICAL_VERIFICATION", reason: data.notes, actorId: volunteerId },
+        idempotencyKey: `applicant-rejected:physical:${idempotencyKey}`,
+      });
+      await notifyApplicant(tx, applicantId, reportEvent.id, "Application update", `Your application was not selected after physical verification. Reason: ${data.notes}`);
+    } else if (data.decision === "APPROVED") {
+      await notifyApplicant(tx, applicantId, reportEvent.id, "Physical verification complete", "Your physical verification is complete. The next step is an online panel interview.");
+    }
     const activityAssignment = await tx.activityAssignment.findFirst({
       where: { volunteerId, activity: { type: "PHYSICAL_VERIFICATION", applicantId } },
       select: { id: true, activityId: true },

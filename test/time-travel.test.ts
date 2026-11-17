@@ -17,7 +17,6 @@ function makeEvent(overrides: Partial<Event>): Event {
     ...overrides,
   };
 }
-
 describe("reduceTimelineAt — malformed payload handling", () => {
   it("leaves applicantStatus as null, not the literal string 'null', when toStatus is missing", () => {
     const events = [makeEvent({ type: "APPLICANT_STATUS_CHANGED", payload: {} })];

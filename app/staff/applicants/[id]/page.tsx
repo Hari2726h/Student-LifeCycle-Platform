@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { notFound, redirect } from "next/navigation";
 import { AlertTriangle, Download, FileWarning, History } from "lucide-react";
 import { auth } from "@/auth";
@@ -13,10 +14,10 @@ import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
-import { Field, Select } from "@/components/ui/input";
+import { Field, Select, TextArea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { GraduationCap } from "lucide-react";
-import { scheduleInterview, submitScore, recordDecision, onboardStudent } from "./actions";
+import { scheduleInterview, submitScore, recordDecision, scheduleOfflineMeeting, recordOfflineMeetingDecision, addApplicantRemark, onboardStudent } from "./actions";
 import { VerificationForm } from "./verification-form";
 import { TimeTravelViewer } from "@/components/time-travel-viewer";
 import { AdvisorySummary } from "@/components/advisory-summary";
@@ -56,10 +57,20 @@ export default async function ApplicantDetailPage({
       documents: true,
       verification: true,
       interview: { include: { scores: { include: { panelist: true } } } },
+      offlineMeeting: { include: { coordinator: true } },
+      identityInfo: { select: { aadhaarLast4: true } },
+      callVerifications: { orderBy: { calledAt: "desc" }, take: 10, include: { volunteer: { select: { name: true } } } },
+      physicalVerificationReports: { orderBy: { createdAt: "desc" }, take: 10, include: { volunteer: { select: { name: true } } } },
       student: true,
     },
   });
   if (!applicant) notFound();
+  const academicDetails = applicant.academicDetails && typeof applicant.academicDetails === "object" && !Array.isArray(applicant.academicDetails)
+    ? applicant.academicDetails as Record<string, unknown>
+    : null;
+  const familyDetails = applicant.sensitiveInfo?.familyDetails && typeof applicant.sensitiveInfo.familyDetails === "object" && !Array.isArray(applicant.sensitiveInfo.familyDetails)
+    ? applicant.sensitiveInfo.familyDetails as Record<string, unknown>
+    : null;
 
   const isAssignedVolunteer = role === "VOLUNTEER" && applicant.volunteerId === session.user.id;
   if (role === "VOLUNTEER" && !isAssignedVolunteer) {
@@ -156,6 +167,8 @@ export default async function ApplicantDetailPage({
               <Row label="Email" value={applicant.email ?? "—"} />
               <Row label="Date of birth" value={applicant.dob.toLocaleDateString()} />
               <Row label="Gender" value={applicant.gender} />
+              <Row label="Community" value={applicant.community ?? "Not provided"} />
+              <Row label="Aadhaar" value={applicant.identityInfo ? `XXXX-XXXX-${applicant.identityInfo.aadhaarLast4}` : "Not provided"} />
               <Row label="Board %" value={applicant.boardPercentage ? `${applicant.boardPercentage}%` : "—"} />
               <Row label="Preferred college" value={applicant.preferredCollege?.name ?? "No preference"} />
               <Row label="Assigned volunteer" value={applicant.volunteer?.name ?? "Unassigned"} />
@@ -173,10 +186,47 @@ export default async function ApplicantDetailPage({
                     <Row label="Annual income" value={applicant.sensitiveInfo.annualIncomeInr ? `₹${applicant.sensitiveInfo.annualIncomeInr}` : "—"} />
                     <Row label="Household size" value={String(applicant.sensitiveInfo.householdSize ?? "—")} />
                     <Row label="Family situation" value={applicant.sensitiveInfo.familySituation.replaceAll("_", " ")} />
+                    <Row label="Parents" value={`${String(familyDetails?.fatherName ?? "Not provided")} · ${String(familyDetails?.motherName ?? "Not provided")}`} />
+                    <Row label="Parent occupations" value={`${String(familyDetails?.fatherOccupation || "Not provided")} · ${String(familyDetails?.motherOccupation || "Not provided")}`} />
+                    <Row label="Parents' contact" value={String(familyDetails?.parentsContactNumber ?? "Not provided")} />
+                    <Row label="House ownership" value={String(familyDetails?.houseOwnership ?? "Not provided")} />
+                    <Row label="State" value={String(familyDetails?.state ?? "Not provided")} />
+                    {Array.isArray(familyDetails?.siblings) && <Row label="Siblings" value={familyDetails.siblings.map((item) => `${String((item as Record<string, unknown>).name ?? "Sibling")} · age ${String((item as Record<string, unknown>).age ?? "—")} · ${String((item as Record<string, unknown>).qualification ?? "—")}${(item as Record<string, unknown>).studyingThroughMaatram === "YES" ? " · Maatram" : ""}`).join("; ") || "None listed"} />}
+                    <Row label="TN counselling" value={String(familyDetails?.tamilNaduCounselling ?? "Not provided")} />
+                    <Row label="First generation" value={String(familyDetails?.firstGeneration ?? "Not provided")} />
+                    <Row label="7.5% reservation" value={String(familyDetails?.governmentSchoolReservation ?? "Not provided")} />
+                    <Row label="Working" value={String(familyDetails?.currentlyWorking ?? "Not provided")} />
+                    <Row label="How they heard about Maatram" value={String(familyDetails?.howHeardAbout ?? "Not provided")} />
+                    {typeof familyDetails?.additionalInformation === "string" && familyDetails.additionalInformation && <Row label="Additional information" value={familyDetails.additionalInformation} />}
                   </>
                 ) : (
                   <p className="col-span-2 text-ink-faint">Not yet submitted.</p>
                 )}
+              </CardBody>
+            </Card>
+          )}
+
+          {canViewSensitive && academicDetails && (
+            <Card>
+              <CardHeader eyebrow="Education" title="School records" />
+              <CardBody className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <Row label="10th school" value={`${String(academicDetails.school10Name ?? "—")} · ${String(academicDetails.school10Year ?? "—")}`} />
+                <Row label="10th marks" value={String(academicDetails.school10Marks ?? "—")} />
+                <Row label="11th school" value={String(academicDetails.school11Name ?? "—")} />
+                <Row label="11th marks" value={String(academicDetails.school11Marks ?? "—")} />
+                <Row label="12th school" value={`${String(academicDetails.school12Name ?? "—")} · ${String(academicDetails.school12Year ?? "—")}`} />
+                <Row label="12th marks / cutoff" value={`${String(academicDetails.school12Marks ?? "—")} / ${String(academicDetails.school12CutoffMarks ?? "—")}`} />
+                <Row label="Headmaster" value={`${String(academicDetails.headmasterName ?? "—")} · ${String(academicDetails.headmasterPhone ?? "—")}`} />
+              </CardBody>
+            </Card>
+          )}
+
+          {canViewSensitive && (applicant.callVerifications.length > 0 || applicant.physicalVerificationReports.length > 0) && (
+            <Card>
+              <CardHeader eyebrow="History" title="Verification history" />
+              <CardBody className="space-y-4">
+                {applicant.callVerifications.map((call) => <div key={call.id} className="border-b border-border pb-3 last:border-0"><div className="flex flex-wrap justify-between gap-2 text-sm"><span className="font-medium">Call attempt {call.attemptNumber} · {call.status.replaceAll("_", " ")}</span><span className="text-xs text-ink-faint">{call.calledAt.toLocaleString()} · {call.volunteer.name}</span></div>{call.comments && <p className="mt-1 text-sm text-ink-muted">{call.comments}</p>}</div>)}
+                {applicant.physicalVerificationReports.map((report) => <div key={report.id} className="border-b border-border pb-3 last:border-0"><div className="flex flex-wrap justify-between gap-2 text-sm"><span className="font-medium">Physical visit · {report.decision.replaceAll("_", " ")}</span><span className="text-xs text-ink-faint">{report.visitAt.toLocaleString()} · {report.volunteer.name}</span></div>{report.observations && <p className="mt-1 text-sm text-ink-muted">{report.observations}</p>}</div>)}
               </CardBody>
             </Card>
           )}
@@ -216,6 +266,12 @@ export default async function ApplicantDetailPage({
               openSlots={openSlots}
             />
           )}
+
+          {role === "STAFF" && (
+            <OfflineMeetingSection applicantId={applicant.id} status={applicant.status} meeting={applicant.offlineMeeting} />
+          )}
+
+          {role === "STAFF" && <Card><CardHeader eyebrow="Staff only" title="Internal remark" description="Saved to the append-only applicant history." /><CardBody><form action={addApplicantRemark.bind(null, applicant.id)} className="space-y-3"><input type="hidden" name="idempotencyKey" value={randomUUID()} /><TextArea label="Remark" name="note" rows={3} maxLength={3000} required /><Button type="submit">Save internal remark</Button></form></CardBody></Card>}
 
           {canViewHistory && <TimeTravelSection events={history} applicantId={applicant.id} />}
           {canViewHistory && <HistorySection events={history} />}
@@ -303,7 +359,9 @@ function InterviewSection({
     id: string;
     scheduledAt: Date | null;
     location: string | null;
+    meetingUrl: string | null;
     decision: string;
+    decisionReason: string | null;
     decidedAt: Date | null;
     scores: { id: string; panelistId: string; academicMerit: number; financialNeed: number; communication: number; intentClarity: number; panelist: { name: string } }[];
   } | null;
@@ -360,6 +418,7 @@ function InterviewSection({
         description={interview.scheduledAt ? `${interview.scheduledAt.toLocaleString()} · ${interview.location}` : undefined}
       />
       <CardBody className="space-y-5">
+        {interview.meetingUrl && <a href={interview.meetingUrl} target="_blank" rel="noreferrer" className="inline-flex text-sm font-medium text-accent hover:underline">Open online meeting</a>}
         {interview.scores.length > 0 && (
           <ul className="space-y-1.5 text-sm">
             {interview.scores.map((s) => (
@@ -394,26 +453,14 @@ function InterviewSection({
               </form>
 
               {interview.scores.length > 0 && (
-                <div className="flex gap-2 border-t border-border pt-4">
-                  <form action={recordDecision.bind(null, applicantId)} className="flex-1">
-                    <input type="hidden" name="decision" value="ACCEPTED" />
-                    <Button type="submit" variant="primary" className="w-full">
-                      Accept
-                    </Button>
-                  </form>
-                  <form action={recordDecision.bind(null, applicantId)} className="flex-1">
-                    <input type="hidden" name="decision" value="WAITLISTED" />
-                    <Button type="submit" variant="secondary" className="w-full">
-                      Waitlist
-                    </Button>
-                  </form>
-                  <form action={recordDecision.bind(null, applicantId)} className="flex-1">
-                    <input type="hidden" name="decision" value="REJECTED" />
-                    <Button type="submit" variant="danger" className="w-full">
-                      Reject
-                    </Button>
-                  </form>
-                </div>
+                <form action={recordDecision.bind(null, applicantId)} className="space-y-3 border-t border-border pt-4">
+                  <Field label="Rejection reason (required if rejecting)" name="reason" maxLength={1500} />
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="submit" name="decision" value="SHORTLISTED" variant="primary">Pass to final meeting</Button>
+                    <Button type="submit" name="decision" value="WAITLISTED" variant="secondary">Waitlist</Button>
+                    <Button type="submit" name="decision" value="REJECTED" variant="danger">Reject</Button>
+                  </div>
+                </form>
               )}
             </>
           ) : (
@@ -426,7 +473,68 @@ function InterviewSection({
             <span className="text-xs text-ink-faint">
               {interview.decidedAt && `Decided ${interview.decidedAt.toLocaleDateString()}`} — final
             </span>
+            {interview.decisionReason && <span className="text-xs text-ink-muted">Reason: {interview.decisionReason}</span>}
           </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function OfflineMeetingSection({
+  applicantId,
+  status,
+  meeting,
+}: {
+  applicantId: string;
+  status: string;
+  meeting: {
+    id: string;
+    scheduledAt: Date | null;
+    location: string | null;
+    outcome: string;
+    attended: boolean | null;
+    remarks: string | null;
+    decisionReason: string | null;
+    coordinator: { name: string } | null;
+  } | null;
+}) {
+  const canSchedule = status === "SHORTLISTED" && (!meeting || ["SCHEDULED", "RESCHEDULED"].includes(meeting.outcome));
+  const canDecide = status === "SHORTLISTED" && !!meeting?.scheduledAt && !["SELECTED", "REJECTED"].includes(meeting.outcome);
+  return (
+    <Card>
+      <CardHeader eyebrow="Final selection" title="Offline meeting" description="Staff confirms the final decision after the in-person meeting." />
+      <CardBody className="space-y-4">
+        {meeting?.scheduledAt ? (
+          <div className="rounded-md border border-border bg-surface-sunken/50 p-3 text-sm">
+            <p className="font-medium text-ink">{meeting.scheduledAt.toLocaleString()} · {meeting.location}</p>
+            <p className="mt-1 text-xs text-ink-faint">Coordinator: {meeting.coordinator?.name ?? "Unassigned"} · Result: {meeting.outcome.replaceAll("_", " ")}</p>
+            {meeting.attended !== null && <p className="mt-1 text-xs text-ink-faint">Applicant attendance: {meeting.attended ? "Attended" : "Did not attend"}</p>}
+            {meeting.remarks && <p className="mt-2 text-sm text-ink-muted">{meeting.remarks}</p>}
+            {meeting.decisionReason && <p className="mt-1 text-sm text-ink-muted">Decision reason: {meeting.decisionReason}</p>}
+          </div>
+        ) : status === "SHORTLISTED" ? (
+          <p className="text-sm text-ink-muted">The applicant passed the online interview and is ready for the final meeting.</p>
+        ) : (
+          <p className="text-sm text-ink-faint">Available after the applicant passes the online interview.</p>
+        )}
+        {canSchedule && (
+          <form action={scheduleOfflineMeeting.bind(null, applicantId)} className="grid gap-3 sm:grid-cols-2">
+            <Field label="Meeting date and time" type="datetime-local" name="scheduledAt" required />
+            <Field label="Location" name="location" required defaultValue={meeting?.location ?? ""} />
+            <div className="sm:col-span-2"><Button type="submit" variant="secondary">{meeting ? "Update meeting schedule" : "Schedule final meeting"}</Button></div>
+          </form>
+        )}
+        {canDecide && (
+          <form action={recordOfflineMeetingDecision.bind(null, applicantId)} className="space-y-3 border-t border-border pt-4">
+            <label className="flex items-center gap-2 text-sm text-ink"><input type="checkbox" name="attended" className="size-4 rounded border-border accent-accent" /> Applicant attended</label>
+            <Field label="Decision reason (required for rejection)" name="reason" defaultValue={meeting?.decisionReason ?? ""} maxLength={1500} />
+            <TextArea label="Core team remarks" name="remarks" rows={3} defaultValue={meeting?.remarks ?? ""} maxLength={3000} />
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" name="decision" value="ACCEPTED" variant="primary">Confirm selection</Button>
+              <Button type="submit" name="decision" value="REJECTED" variant="danger">Reject after final meeting</Button>
+            </div>
+          </form>
         )}
       </CardBody>
     </Card>

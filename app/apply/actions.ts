@@ -9,9 +9,12 @@ import { requestOtp } from "@/lib/otp";
 import { createPresignedUploadUrl, confirmUpload, putObjectDirect, describeUploadError } from "@/lib/storage";
 import { assignVolunteer } from "@/lib/applicants";
 import { appendEvent } from "@/lib/events";
+import { notifyApplicant } from "@/lib/notifications";
 import { getOpenCycle, isCycleOpen } from "@/lib/cycles";
 import { LANG_COOKIE, type Lang } from "@/lib/i18n";
 import { Role, type DocumentKind } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { hashAadhaar } from "@/lib/aadhaar";
 
 async function requireApplicant() {
   const session = await auth();
@@ -19,6 +22,15 @@ async function requireApplicant() {
     redirect("/login");
   }
   return session.user;
+}
+
+async function requireDraftApplicant(userId: string) {
+  const applicant = await prisma.applicant.findUnique({
+    where: { userId },
+    select: { id: true, status: true },
+  });
+  if (applicant && applicant.status !== "DRAFT") redirect("/applicant");
+  return applicant;
 }
 
 async function requireVolunteer() {
@@ -53,17 +65,22 @@ const personalSchema = z.object({
   fullName: z.string().trim().min(2, "Enter the full name"),
   dob: z.coerce.date().refine((d) => d < new Date(), "Enter a valid date of birth"),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]),
+  aadhaarNumber: z.string().regex(/^\d{12}$/, "Enter a valid 12-digit Aadhaar number").optional(),
   district: z.string().min(1, "Select a district"),
+  community: z.string().trim().max(80).optional().or(z.literal("")),
   email: z.string().trim().email().optional().or(z.literal("")),
 });
 
 export async function saveStep1(formData: FormData) {
   const user = await requireApplicant();
+  const existingDraft = await requireDraftApplicant(user.id);
   const parsed = personalSchema.safeParse({
     fullName: formData.get("fullName"),
     dob: formData.get("dob"),
     gender: formData.get("gender"),
+    aadhaarNumber: String(formData.get("aadhaarNumber") ?? "").trim() || undefined,
     district: formData.get("district"),
+    community: formData.get("community"),
     email: formData.get("email"),
   });
   if (!parsed.success) {
@@ -71,6 +88,17 @@ export async function saveStep1(formData: FormData) {
   }
 
   const data = parsed.data;
+  const existingIdentity = await prisma.applicant.findUnique({ where: { userId: user.id }, select: { id: true, identityInfo: { select: { id: true } } } });
+  if (!data.aadhaarNumber && !existingIdentity?.identityInfo) {
+    redirect("/apply?step=1&error=Enter+your+Aadhaar+number");
+  }
+  const aadhaarHmac = data.aadhaarNumber ? hashAadhaar(data.aadhaarNumber) : null;
+  if (aadhaarHmac) {
+    const duplicate = await prisma.applicantIdentity.findUnique({ where: { aadhaarHmac }, select: { applicantId: true } });
+    if (duplicate && duplicate.applicantId !== existingIdentity?.id) {
+      redirect("/apply?step=1&error=An+application+already+exists+with+this+Aadhaar+number.+Contact+Maatram+for+help.");
+    }
+  }
   const account = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
 
   // The account was created at OTP time with a placeholder name
@@ -83,9 +111,8 @@ export async function saveStep1(formData: FormData) {
 
   // Only a brand-new application needs an open cycle — an existing draft
   // keeps whatever cycle it was born into, even if that's since closed.
-  const existing = await prisma.applicant.findUnique({ where: { userId: user.id }, select: { id: true } });
   let cycleId: string | undefined;
-  if (!existing) {
+  if (!existingDraft) {
     const openCycle = await getOpenCycle();
     if (!openCycle) {
       redirect("/apply?step=1&error=Applications+are+closed+for+this+year.+Please+check+back+for+the+next+cycle.");
@@ -93,7 +120,7 @@ export async function saveStep1(formData: FormData) {
     cycleId = openCycle.id;
   }
 
-  await prisma.applicant.upsert({
+  const applicant = await prisma.applicant.upsert({
     where: { userId: user.id },
     create: {
       userId: user.id,
@@ -101,6 +128,7 @@ export async function saveStep1(formData: FormData) {
       dob: data.dob,
       gender: data.gender,
       district: data.district,
+      community: data.community || null,
       phone: account.phone ?? "",
       email: data.email || null,
       cycleId,
@@ -110,9 +138,25 @@ export async function saveStep1(formData: FormData) {
       dob: data.dob,
       gender: data.gender,
       district: data.district,
+      community: data.community || null,
       email: data.email || null,
     },
   });
+
+  if (data.aadhaarNumber && aadhaarHmac) {
+    try {
+      await prisma.applicantIdentity.upsert({
+        where: { applicantId: applicant.id },
+        create: { applicantId: applicant.id, aadhaarHmac, aadhaarLast4: data.aadhaarNumber.slice(-4) },
+        update: { aadhaarHmac, aadhaarLast4: data.aadhaarNumber.slice(-4) },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        redirect("/apply?step=1&error=An+application+already+exists+with+this+Aadhaar+number.+Contact+Maatram+for+help.");
+      }
+      throw error;
+    }
+  }
 
   redirect("/apply?step=2");
 }
@@ -123,20 +167,47 @@ const academicSchema = z.object({
   preferredCollegeId: z.string().optional(),
 });
 
+const schoolSchema = z.object({
+  school10Name: z.string().trim().min(2).max(180),
+  school10Type: z.enum(["GOVERNMENT", "PRIVATE"]),
+  school10Curriculum: z.enum(["STATE_BOARD", "CBSE", "OTHER"]),
+  school10Year: z.coerce.number().int().min(1990).max(2100),
+  school10Marks: z.coerce.number().min(0).max(1000),
+  school10Address: z.string().trim().min(3).max(400),
+  school11Name: z.string().trim().min(2).max(180),
+  school11Type: z.enum(["GOVERNMENT", "PRIVATE"]),
+  school11Medium: z.enum(["TAMIL", "ENGLISH", "OTHER"]),
+  school11Curriculum: z.enum(["STATE_BOARD", "CBSE", "OTHER"]),
+  school11Marks: z.coerce.number().min(0).max(1000),
+  school12Name: z.string().trim().min(2).max(180),
+  school12Type: z.enum(["GOVERNMENT", "PRIVATE"]),
+  school12Medium: z.enum(["TAMIL", "ENGLISH", "OTHER"]),
+  school12Curriculum: z.enum(["STATE_BOARD", "CBSE", "OTHER"]),
+  school12Marks: z.coerce.number().min(0).max(1000),
+  school12CutoffMarks: z.coerce.number().min(0).max(1000),
+  school12Year: z.coerce.number().int().min(1990).max(2100),
+  school12Address: z.string().trim().min(3).max(400),
+  headmasterName: z.string().trim().min(2).max(120),
+  headmasterPhone: z.string().regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number"),
+});
+
 export async function saveStep2(formData: FormData) {
   const user = await requireApplicant();
-  const parsed = academicSchema.safeParse({
+  if (!(await requireDraftApplicant(user.id))) redirect("/apply?step=1");
+  const parsed = academicSchema.extend(schoolSchema.shape).safeParse({
     boardPercentage: formData.get("boardPercentage"),
     courseInterest: formData.get("courseInterest"),
     preferredCollegeId: formData.get("preferredCollegeId") || undefined,
+    ...Object.fromEntries(Object.keys(schoolSchema.shape).map((key) => [key, formData.get(key)])),
   });
   if (!parsed.success) {
     redirect(`/apply?step=2&error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
   }
 
+  const { boardPercentage, courseInterest, preferredCollegeId, ...academicDetails } = parsed.data;
   await prisma.applicant.update({
     where: { userId: user.id },
-    data: { ...parsed.data },
+    data: { boardPercentage, courseInterest, preferredCollegeId, academicDetails },
   });
 
   redirect("/apply?step=3");
@@ -148,14 +219,48 @@ const familySchema = z.object({
   pincode: z.string().regex(/^\d{6}$/, "Enter a 6-digit pincode"),
   guardianName: z.string().min(2),
   guardianPhone: z.string().regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number"),
-  annualIncomeInr: z.coerce.number().int().min(0).optional(),
+  annualIncomeInr: z.coerce.number().int().min(0),
   householdSize: z.coerce.number().int().min(1).max(30).optional(),
   familySituation: z.enum(["ORPHAN", "SINGLE_PARENT", "BOTH_PARENTS", "GUARDIAN_CARE", "OTHER"]),
+  fatherName: z.string().trim().min(2).max(120),
+  fatherOccupation: z.string().trim().min(2).max(120),
+  motherName: z.string().trim().min(2).max(120),
+  motherOccupation: z.string().trim().min(2).max(120),
+  parentsContactNumber: z.string().regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number"),
+  houseOwnership: z.enum(["OWN", "RENTED", "OTHER"]),
+  state: z.string().trim().min(2).max(80),
+  tamilNaduCounselling: z.enum(["YES", "NO"]),
+  firstGeneration: z.enum(["YES", "NO"]),
+  governmentSchoolReservation: z.enum(["YES", "NO"]),
+  maatramSibling: z.enum(["YES", "NO"]),
+  currentlyWorking: z.enum(["YES", "NO"]),
+  currentWorkDetails: z.string().trim().max(250),
+  howHeardAbout: z.string().trim().min(2).max(120),
+  additionalInformation: z.string().trim().max(2000),
+});
+
+const siblingSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  age: z.coerce.number().int().min(0).max(100),
+  qualification: z.string().trim().min(2).max(120),
+  studyingThroughMaatram: z.enum(["YES", "NO"]),
 });
 
 export async function saveStep3(formData: FormData) {
   const user = await requireApplicant();
+  if (!(await requireDraftApplicant(user.id))) redirect("/apply?step=1");
   const applicant = await prisma.applicant.findUniqueOrThrow({ where: { userId: user.id } });
+
+  const siblingNames = formData.getAll("siblingName").map(String);
+  const siblingAges = formData.getAll("siblingAge").map(String);
+  const siblingQualifications = formData.getAll("siblingQualification").map(String);
+  const siblingMaatram = formData.getAll("siblingMaatram").map(String);
+  const siblings = siblingNames.map((name, index) => ({
+    name: name.trim(),
+    age: siblingAges[index] ?? "",
+    qualification: siblingQualifications[index] ?? "",
+    studyingThroughMaatram: siblingMaatram[index] ?? "NO",
+  })).filter((sibling) => sibling.name || sibling.age || sibling.qualification);
 
   const parsed = familySchema.safeParse({
     addressLine1: formData.get("addressLine1"),
@@ -166,15 +271,56 @@ export async function saveStep3(formData: FormData) {
     annualIncomeInr: formData.get("annualIncomeInr") || undefined,
     householdSize: formData.get("householdSize") || undefined,
     familySituation: formData.get("familySituation"),
+    fatherName: formData.get("fatherName"),
+    fatherOccupation: formData.get("fatherOccupation") ?? "",
+    motherName: formData.get("motherName"),
+    motherOccupation: formData.get("motherOccupation") ?? "",
+    parentsContactNumber: formData.get("parentsContactNumber"),
+    houseOwnership: formData.get("houseOwnership"),
+    state: formData.get("state"),
+    tamilNaduCounselling: formData.get("tamilNaduCounselling"),
+    firstGeneration: formData.get("firstGeneration"),
+    governmentSchoolReservation: formData.get("governmentSchoolReservation"),
+    maatramSibling: formData.get("maatramSibling"),
+    currentlyWorking: formData.get("currentlyWorking"),
+    currentWorkDetails: formData.get("currentWorkDetails") ?? "",
+    howHeardAbout: formData.get("howHeardAbout"),
+    additionalInformation: formData.get("additionalInformation") ?? "",
   });
   if (!parsed.success) {
     redirect(`/apply?step=3&error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
   }
 
+  const parsedSiblings = z.array(siblingSchema).max(10, "Add up to 10 siblings").safeParse(siblings);
+  if (!parsedSiblings.success) {
+    redirect(`/apply?step=3&error=${encodeURIComponent(parsedSiblings.error.issues[0]?.message ?? "Check sibling details")}`);
+  }
+
   await prisma.applicantSensitiveInfo.upsert({
     where: { applicantId: applicant.id },
-    create: { applicantId: applicant.id, ...parsed.data },
-    update: { ...parsed.data },
+    create: {
+      applicantId: applicant.id,
+      addressLine1: parsed.data.addressLine1,
+      addressLine2: parsed.data.addressLine2 || null,
+      pincode: parsed.data.pincode,
+      guardianName: parsed.data.guardianName,
+      guardianPhone: parsed.data.guardianPhone,
+      annualIncomeInr: parsed.data.annualIncomeInr ?? null,
+      householdSize: parsed.data.householdSize ?? null,
+      familySituation: parsed.data.familySituation,
+      familyDetails: { ...parsed.data, siblings: parsedSiblings.data },
+    },
+    update: {
+      addressLine1: parsed.data.addressLine1,
+      addressLine2: parsed.data.addressLine2 || null,
+      pincode: parsed.data.pincode,
+      guardianName: parsed.data.guardianName,
+      guardianPhone: parsed.data.guardianPhone,
+      annualIncomeInr: parsed.data.annualIncomeInr ?? null,
+      householdSize: parsed.data.householdSize ?? null,
+      familySituation: parsed.data.familySituation,
+      familyDetails: { ...parsed.data, siblings: parsedSiblings.data },
+    },
   });
 
   redirect("/apply?step=4");
@@ -193,6 +339,7 @@ export async function requestDocumentUploadUrlAction(input: {
 }): Promise<{ ok: true; storageKey: string; uploadUrl: string } | { ok: false; error: string }> {
   const user = await requireApplicant();
   const applicant = await prisma.applicant.findUniqueOrThrow({ where: { userId: user.id } });
+  if (applicant.status !== "DRAFT") return { ok: false as const, error: "Submitted applications can no longer be edited" };
   try {
     const result = await createPresignedUploadUrl({ applicantId: applicant.id, ...input });
     return { ok: true, ...result };
@@ -208,6 +355,10 @@ export async function confirmDocumentUploadAction(input: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const user = await requireApplicant();
   const applicant = await prisma.applicant.findUniqueOrThrow({ where: { userId: user.id } });
+  if (applicant.status !== "DRAFT") return { ok: false as const, error: "Submitted applications can no longer be edited" };
+
+  const applicantDocumentKinds: DocumentKind[] = ["MARK_SHEET_10", "MARK_SHEET_11", "MARK_SHEET_12", "AADHAAR_DOCUMENT", "PASSPORT_PHOTO"];
+  if (!applicantDocumentKinds.includes(input.kind)) return { ok: false as const, error: "This document type is not accepted for the application form" };
 
   // mimeType/sizeBytes come from the object actually sitting in storage,
   // not from whatever the client claims — a client that isn't going
@@ -240,13 +391,14 @@ export async function submitApplicationAction() {
   const user = await requireApplicant();
   const applicant = await prisma.applicant.findUniqueOrThrow({
     where: { userId: user.id },
-    include: { documents: true, sensitiveInfo: true },
+    include: { documents: true, sensitiveInfo: true, identityInfo: true },
   });
 
   if (applicant.status !== "DRAFT") redirect("/apply/submitted");
 
-  const hasIdProof = applicant.documents.some((d) => d.kind === "ID_PROOF");
-  if (!applicant.boardPercentage || !applicant.courseInterest || !applicant.sensitiveInfo || !hasIdProof) {
+  const requiredDocuments: DocumentKind[] = ["MARK_SHEET_10", "MARK_SHEET_11", "MARK_SHEET_12", "AADHAAR_DOCUMENT", "PASSPORT_PHOTO"];
+  const hasRequiredDocuments = requiredDocuments.every((kind) => applicant.documents.some((document) => document.kind === kind));
+  if (applicant.boardPercentage == null || !applicant.courseInterest || !applicant.academicDetails || !applicant.sensitiveInfo?.familyDetails || !applicant.identityInfo || !hasRequiredDocuments) {
     redirect("/apply?step=5&error=Please+complete+every+step+before+submitting");
   }
 
@@ -257,26 +409,42 @@ export async function submitApplicationAction() {
   const volunteerId = await assignVolunteer(applicant.district, applicant.sensitiveInfo?.pincode);
   const nextStatus = volunteerId ? "UNDER_VERIFICATION" : "SUBMITTED";
 
-  await prisma.$transaction(async (tx) => {
-    await tx.applicant.update({
-      where: { id: applicant.id },
-      data: volunteerId ? { status: "UNDER_VERIFICATION", volunteerId } : { status: "SUBMITTED" },
+  const submitted = await prisma.$transaction(async (tx) => {
+    const changed = await tx.applicant.updateMany({
+      where: { id: applicant.id, status: "DRAFT" },
+      data: volunteerId ? { status: "UNDER_VERIFICATION", volunteerId, submittedAt: new Date() } : { status: "SUBMITTED", submittedAt: new Date() },
     });
-    await appendEvent(tx, {
+    if (changed.count === 0) return false;
+    const event = await appendEvent(tx, {
       aggregateType: "Applicant",
       aggregateId: applicant.id,
       type: "APPLICANT_STATUS_CHANGED",
       payload: { fromStatus: "DRAFT", toStatus: nextStatus, action: "APPLICATION_SUBMITTED", volunteerId },
+      idempotencyKey: `application-submitted:${applicant.id}`,
     });
+    await notifyApplicant(tx, applicant.id, event.id, "Application submitted", "Your application has been received. You can follow its progress from your applicant dashboard.");
+    return true;
   });
 
-  redirect("/apply/submitted");
+  redirect(submitted ? "/apply/submitted" : "/applicant");
 }
 
 const assistedSchema = personalSchema
   .merge(academicSchema)
-  .merge(familySchema)
-  .extend({ phone: z.string().regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number") });
+  .merge(familySchema.extend({
+    annualIncomeInr: z.coerce.number().int().min(0).optional(),
+    fatherName: z.string().optional(), fatherOccupation: z.string().optional(),
+    motherName: z.string().optional(), motherOccupation: z.string().optional(),
+    parentsContactNumber: z.string().optional(), houseOwnership: z.enum(["OWN", "RENTED", "OTHER"]).optional(),
+    state: z.string().optional(), tamilNaduCounselling: z.enum(["YES", "NO"]).optional(),
+    firstGeneration: z.enum(["YES", "NO"]).optional(), governmentSchoolReservation: z.enum(["YES", "NO"]).optional(),
+    maatramSibling: z.enum(["YES", "NO"]).optional(), currentlyWorking: z.enum(["YES", "NO"]).optional(),
+    currentWorkDetails: z.string().optional(), howHeardAbout: z.string().optional(), additionalInformation: z.string().optional(),
+  }))
+  .extend({
+    phone: z.string().regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number"),
+    aadhaarNumber: z.string().regex(/^\d{12}$/, "Enter a valid 12-digit Aadhaar number"),
+  });
 
 /** A volunteer collecting data during a home visit files the whole
  * application in one pass, pre-assigned to themselves — they're the one
@@ -290,7 +458,9 @@ export async function createAssistedApplication(formData: FormData) {
     fullName: formData.get("fullName"),
     dob: formData.get("dob"),
     gender: formData.get("gender"),
+    aadhaarNumber: formData.get("aadhaarNumber"),
     district: formData.get("district"),
+    community: formData.get("community"),
     email: formData.get("email") || undefined,
     boardPercentage: formData.get("boardPercentage"),
     courseInterest: formData.get("courseInterest"),
@@ -354,6 +524,7 @@ export async function createAssistedApplication(formData: FormData) {
       dob: data.dob,
       gender: data.gender,
       district: data.district,
+      community: data.community || null,
       phone: data.phone,
       email: data.email || null,
       boardPercentage: data.boardPercentage,
@@ -361,6 +532,7 @@ export async function createAssistedApplication(formData: FormData) {
       preferredCollegeId: data.preferredCollegeId || null,
       volunteerId: volunteer.id,
       status: "UNDER_VERIFICATION",
+      submittedAt: new Date(),
       cycleId,
     },
     update: {
@@ -368,13 +540,26 @@ export async function createAssistedApplication(formData: FormData) {
       dob: data.dob,
       gender: data.gender,
       district: data.district,
+      community: data.community || null,
       email: data.email || null,
       boardPercentage: data.boardPercentage,
       courseInterest: data.courseInterest,
       preferredCollegeId: data.preferredCollegeId || null,
       volunteerId: volunteer.id,
       status: "UNDER_VERIFICATION",
+      submittedAt: new Date(),
     },
+  });
+
+  const aadhaarHmac = hashAadhaar(data.aadhaarNumber);
+  const duplicateAadhaar = await prisma.applicantIdentity.findUnique({ where: { aadhaarHmac }, select: { applicantId: true } });
+  if (duplicateAadhaar && duplicateAadhaar.applicantId !== applicant.id) {
+    redirect(`/apply/assist?error=${encodeURIComponent("An application already exists with this Aadhaar number. Contact Maatram staff.")}`);
+  }
+  await prisma.applicantIdentity.upsert({
+    where: { applicantId: applicant.id },
+    create: { applicantId: applicant.id, aadhaarHmac, aadhaarLast4: data.aadhaarNumber.slice(-4) },
+    update: { aadhaarHmac, aadhaarLast4: data.aadhaarNumber.slice(-4) },
   });
 
   await prisma.applicantSensitiveInfo.upsert({

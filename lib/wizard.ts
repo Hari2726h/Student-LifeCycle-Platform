@@ -8,7 +8,7 @@ export type WizardStep = 1 | 2 | 3 | 4 | 5;
 export async function getWizardState(userId: string) {
   const applicant = await prisma.applicant.findUnique({
     where: { userId },
-    include: { sensitiveInfo: true, documents: true, preferredCollege: true },
+    include: { sensitiveInfo: true, identityInfo: { select: { aadhaarLast4: true } }, documents: true, preferredCollege: true },
   });
 
   if (!applicant) {
@@ -22,7 +22,8 @@ export async function getWizardState(userId: string) {
   let maxStep: WizardStep = 2;
   if (applicant.boardPercentage != null && applicant.courseInterest) maxStep = 3;
   if (applicant.sensitiveInfo) maxStep = 4;
-  if (applicant.documents.some((d) => d.kind === "ID_PROOF")) maxStep = 5;
+  const requiredKinds = ["MARK_SHEET_10", "MARK_SHEET_11", "MARK_SHEET_12", "AADHAAR_DOCUMENT", "PASSPORT_PHOTO"];
+  if (requiredKinds.every((kind) => applicant.documents.some((document) => document.kind === kind))) maxStep = 5;
 
   return { applicant, maxStep, alreadySubmitted: false };
 }

@@ -3,6 +3,7 @@ import { CheckCircle2 } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageToggle } from "../language-toggle";
 import { LANG_COOKIE, t, type Lang } from "@/lib/i18n";
+import Link from "next/link";
 
 export default async function SubmittedPage() {
   const cookieStore = await cookies();
@@ -24,6 +25,7 @@ export default async function SubmittedPage() {
         </div>
         <h1 className="mt-4 font-display text-xl font-medium text-ink">{strings.submittedTitle}</h1>
         <p className="mt-2 text-sm leading-relaxed text-ink-muted">{strings.submittedBody}</p>
+        <Link href="/applicant" className="mt-5 inline-block text-sm font-medium text-accent hover:underline">Track your application</Link>
       </div>
     </div>
   );

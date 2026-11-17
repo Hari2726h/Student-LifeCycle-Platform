@@ -46,9 +46,8 @@ export default async function InterviewSlotsPage({
                     return (
                       <li key={s.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                         <div>
-                          <p className="text-sm font-medium text-ink">
-                            {s.scheduledAt.toLocaleString()} · {s.location}
-                          </p>
+                          <p className="text-sm font-medium text-ink">{s.scheduledAt.toLocaleString()} · {s.location}</p>
+                          {s.meetingUrl && <a href={s.meetingUrl} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-accent hover:underline">Meeting link</a>}
                           <p className="text-xs text-ink-faint">Declared by {s.createdBy.name}</p>
                         </div>
                         <Badge tone={full ? "danger" : "success"}>
@@ -69,6 +68,7 @@ export default async function InterviewSlotsPage({
             <form action={createInterviewSlot} className="space-y-4">
               <Field label="Date & time" type="datetime-local" name="scheduledAt" required />
               <Field label="Location" name="location" required defaultValue="Maatram Foundation Centre, Chennai" />
+              <Field label="Online meeting link" type="url" name="meetingUrl" placeholder="https://…" />
               <Field label="Capacity (applicants)" type="number" name="capacity" min={1} max={20} required defaultValue={3} />
               <Button type="submit" variant="primary" className="w-full">
                 Add slot

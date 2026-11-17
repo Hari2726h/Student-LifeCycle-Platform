@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { appendEvent } from "@/lib/events";
+import { notifyApplicant } from "@/lib/notifications";
 import { claimIdempotencyKey, finalizeIdempotencyKey } from "@/lib/idempotency";
 import type { ApplicationStatus } from "@prisma/client";
 
@@ -62,12 +63,22 @@ async function runBulkTransition(
     await prisma.$transaction(async (tx) => {
       for (const a of eligible) {
         await tx.applicant.update({ where: { id: a.id }, data: { status: toStatus } });
-        await appendEvent(tx, {
+        const event = await appendEvent(tx, {
           aggregateType: "Applicant",
           aggregateId: a.id,
           type: "APPLICANT_STATUS_CHANGED",
           payload: { fromStatus: a.status, toStatus, action: actionLabel, reason, actorId: staff.id, bulk: true },
         });
+        if (toStatus === "REJECTED") {
+          await appendEvent(tx, {
+            aggregateType: "Applicant", aggregateId: a.id, type: "APPLICANT_REJECTED",
+            payload: { stage: a.status, reason, actorId: staff.id, bulk: true },
+            idempotencyKey: `applicant-rejected:bulk:${idempotencyKey}:${a.id}`,
+          });
+          await notifyApplicant(tx, a.id, event.id, "Application update", `Your application was not selected. Reason: ${reason}`);
+        } else if (toStatus === "ACCEPTED") {
+          await notifyApplicant(tx, a.id, event.id, "You have been selected", "Your application has been selected. Maatram staff will contact you about onboarding.");
+        }
       }
     });
   }
@@ -79,14 +90,6 @@ async function runBulkTransition(
   await finalizeIdempotencyKey(idempotencyKey, message);
 
   redirect(`/staff?result=${encodeURIComponent(message)}`);
-}
-
-export async function bulkShortlist(formData: FormData) {
-  await runBulkTransition(formData, ["SUBMITTED", "UNDER_VERIFICATION", "VERIFIED"], "SHORTLISTED", "BULK_SHORTLIST");
-}
-
-export async function bulkSelect(formData: FormData) {
-  await runBulkTransition(formData, ["SHORTLISTED", "INTERVIEWED"], "ACCEPTED", "BULK_SELECT");
 }
 
 export async function bulkReject(formData: FormData) {

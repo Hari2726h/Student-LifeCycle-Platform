@@ -55,6 +55,9 @@ export default async function AssistPage({
                 </option>
               ))}
             </Select>
+            <Field label="Community (optional)" name="community" maxLength={80} />
+            <Field label="Aadhaar number" name="aadhaarNumber" inputMode="numeric" maxLength={12} minLength={12} pattern="[0-9]{12}" required />
+            <p className="-mt-3 text-xs text-ink-faint">Only a keyed hash and last four digits are stored.</p>
             <Field label="Email (optional)" type="email" name="email" />
           </CardBody>
         </Card>

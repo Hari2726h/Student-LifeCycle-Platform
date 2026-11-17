@@ -106,6 +106,7 @@ enum CallVerificationStatus {
   CALL_LATER
   WRONG_NUMBER
   VERIFICATION_COMPLETED
+  REJECTED
 }
 
 enum ActivityExpenseStatus {
@@ -128,6 +129,14 @@ enum InterviewDecision {
   ACCEPTED
   REJECTED
   WAITLISTED
+}
+
+enum OfflineMeetingOutcome {
+  SCHEDULED
+  COMPLETED
+  SELECTED
+  REJECTED
+  RESCHEDULED
 }
 
 enum CollegeType {
@@ -183,11 +192,17 @@ enum DocumentKind {
   SUPPORTING_DOCUMENT
   CERTIFICATE_PROOF
   OFFER_LETTER
+  MARK_SHEET_10
+  MARK_SHEET_11
+  MARK_SHEET_12
+  AADHAAR_DOCUMENT
+  PASSPORT_PHOTO
 }
 
 enum NotificationType {
   RISK_FLAG
   STALE_CHECK_IN
+  APPLICANT_UPDATE
 }
 
 enum FollowUpStatus {
@@ -212,14 +227,13 @@ model User {
 
   // Phone + OTP sign-in for applicants (no SMS gateway in this dev build —
   // see lib/otp.ts; the code is surfaced in the UI instead of texted out).
-  otpCode         String?
-  otpExpiresAt    DateTime?
+  otpCode      String?
+  otpExpiresAt DateTime?
   // Failed verifyOtp() attempts against the current otpCode — invalidates
   // the code after a handful of wrong guesses so a 6-digit code isn't
   // brute-forceable within its 5-minute TTL (10^6 possibilities with no
   // throttle otherwise). Reset to 0 whenever a fresh code is issued.
-  otpAttempts     Int       @default(0)
-
+  otpAttempts  Int       @default(0)
 
   // Volunteers' coverage area — the basis for geo-assigning the
   // verification queue. Unused by other roles.
@@ -237,6 +251,8 @@ model User {
   interviewDecisions          InterviewRecord[]            @relation("InterviewDecidedBy")
   interviewScoresGiven        InterviewScore[]
   interviewSlotsCreated       InterviewSlot[]
+  offlineMeetingsCoordinated  OfflineMeeting[]             @relation("OfflineMeetingCoordinator")
+  offlineMeetingDecisions     OfflineMeeting[]             @relation("OfflineMeetingDecision")
   mentorLogsResolved          MentorLog[]                  @relation("RiskResolvedBy")
   documentsUploaded           Document[]
   notifications               Notification[]
@@ -273,6 +289,8 @@ model Applicant {
   phone              String
   email              String?
   district           String
+  community          String?
+  academicDetails    Json?
   // Filled a step later than the row is created (academic-details step),
   // so these stay nullable to support progressive save-as-you-go.
   boardPercentage    Float?
@@ -280,7 +298,8 @@ model Applicant {
   preferredCollege   College? @relation(fields: [preferredCollegeId], references: [id])
   preferredCollegeId String?
 
-  status ApplicationStatus @default(DRAFT)
+  status      ApplicationStatus @default(DRAFT)
+  submittedAt DateTime?
 
   // Set once, at creation, to whichever cycle is open that day — stays
   // fixed even if the cycle closes before the applicant finishes (an
@@ -294,12 +313,14 @@ model Applicant {
   volunteerId String?
 
   sensitiveInfo               ApplicantSensitiveInfo?
+  identityInfo                ApplicantIdentity?
   verification                Verification?
   callVerifications           CallVerification[]
   physicalVerificationReports PhysicalVerificationReport[]
   volunteerActivities         VolunteerActivity[]
   schoolVisitInterests        SchoolVisitInterest[]
   interview                   InterviewRecord?
+  offlineMeeting              OfflineMeeting?
   documents                   Document[]
   student                     Student?
   karpomAsJunior              KarpomSession[]
@@ -340,9 +361,22 @@ model ApplicantSensitiveInfo {
   annualIncomeInr Int?
   householdSize   Int?
   familySituation FamilySituation
+  familyDetails   Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Aadhaar is never stored in plaintext. The HMAC supports exact duplicate
+// checks while the final four digits are enough to mask it in authorized views.
+model ApplicantIdentity {
+  id           String    @id @default(cuid())
+  applicant    Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId  String    @unique
+  aadhaarHmac  String    @unique
+  aadhaarLast4 String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 model Verification {
@@ -656,6 +690,7 @@ model InterviewSlot {
   id          String   @id @default(cuid())
   scheduledAt DateTime
   location    String
+  meetingUrl  String?
   capacity    Int      @default(3)
 
   createdBy   User   @relation(fields: [createdById], references: [id])
@@ -673,14 +708,16 @@ model InterviewRecord {
   applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
   applicantId String    @unique
 
-  slot        InterviewSlot?    @relation(fields: [slotId], references: [id])
-  slotId      String?
-  scheduledAt DateTime?
-  location    String?
-  decision    InterviewDecision @default(PENDING)
-  decidedAt   DateTime?
-  decidedBy   User?             @relation("InterviewDecidedBy", fields: [decidedById], references: [id])
-  decidedById String?
+  slot           InterviewSlot?    @relation(fields: [slotId], references: [id])
+  slotId         String?
+  scheduledAt    DateTime?
+  location       String?
+  meetingUrl     String?
+  decision       InterviewDecision @default(PENDING)
+  decisionReason String?
+  decidedAt      DateTime?
+  decidedBy      User?             @relation("InterviewDecidedBy", fields: [decidedById], references: [id])
+  decidedById    String?
 
   scores InterviewScore[]
 
@@ -706,6 +743,29 @@ model InterviewScore {
   createdAt DateTime @default(now())
 
   @@unique([interviewId, panelistId])
+}
+
+model OfflineMeeting {
+  id          String    @id @default(cuid())
+  applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId String    @unique
+
+  scheduledAt    DateTime?
+  location       String?
+  coordinator    User?                 @relation("OfflineMeetingCoordinator", fields: [coordinatorId], references: [id])
+  coordinatorId  String?
+  attended       Boolean?
+  remarks        String?
+  outcome        OfflineMeetingOutcome @default(SCHEDULED)
+  decisionReason String?
+  decidedAt      DateTime?
+  decidedBy      User?                 @relation("OfflineMeetingDecision", fields: [decidedById], references: [id])
+  decidedById    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([outcome, scheduledAt])
 }
 
 // ──────────────────────────────────────────────────────────────────────────

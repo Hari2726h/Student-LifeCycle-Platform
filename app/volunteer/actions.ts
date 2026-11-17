@@ -6,6 +6,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { appendEvent } from "@/lib/events";
+import { notifyApplicant } from "@/lib/notifications";
 import { describeUploadError, putActivityMediaDirect, putObjectDirect } from "@/lib/storage";
 
 async function requireVolunteer() {
@@ -144,10 +145,16 @@ export async function createVolunteerActivity(formData: FormData) {
     redirect("/staff/volunteers?error=Enter+the+Santa+programme+volunteer+reporting+time");
   }
   const [linkedApplicant, linkedStudent] = await Promise.all([
-    data.applicantId ? prisma.applicant.findUnique({ where: { id: data.applicantId }, select: { id: true } }) : null,
+    data.applicantId ? prisma.applicant.findUnique({ where: { id: data.applicantId }, select: { id: true, status: true, callVerifications: { where: { status: "VERIFICATION_COMPLETED" }, take: 1, select: { id: true } } } }) : null,
     data.studentId ? prisma.student.findUnique({ where: { id: data.studentId }, select: { id: true } }) : null,
   ]);
   if (data.applicantId && !linkedApplicant) redirect("/staff/volunteers?error=Applicant+not+found");
+  if (data.type === "CALL_VERIFICATION" && linkedApplicant && !["SUBMITTED", "UNDER_VERIFICATION"].includes(linkedApplicant.status)) {
+    redirect("/staff/volunteers?error=Call+verification+can+only+be+scheduled+before+physical+verification");
+  }
+  if (data.type === "PHYSICAL_VERIFICATION" && linkedApplicant && linkedApplicant.callVerifications.length === 0) {
+    redirect("/staff/volunteers?error=Complete+call+verification+before+scheduling+the+home+visit");
+  }
   if (data.studentId && !linkedStudent) redirect("/staff/volunteers?error=Student+not+found");
 
   const volunteers = await prisma.user.findMany({
@@ -198,13 +205,23 @@ export async function createVolunteerActivity(formData: FormData) {
       },
       include: { assignments: true },
     });
-    await appendEvent(tx, {
+    const activityEvent = await appendEvent(tx, {
       aggregateType: "VolunteerActivity",
       aggregateId: created.id,
       type: "ACTIVITY_CREATED",
       payload: { type: created.type, name: created.name, actorId: staff.id, assignedVolunteerIds: volunteers.map((v) => v.id) },
       idempotencyKey: `activity-created:${data.idempotencyKey}`,
     });
+    if (created.applicantId && ["CALL_VERIFICATION", "PHYSICAL_VERIFICATION"].includes(created.type)) {
+      const call = created.type === "CALL_VERIFICATION";
+      await notifyApplicant(
+        tx,
+        created.applicantId,
+        activityEvent.id,
+        call ? "Call verification scheduled" : "Physical verification scheduled",
+        `${call ? "A verification call" : "A home visit"} is scheduled for ${created.startsAt.toLocaleString()}${created.location ? ` at ${created.location}` : ""}.`,
+      );
+    }
     for (const assignment of created.assignments) {
       await appendEvent(tx, {
         aggregateType: "VolunteerActivity",
@@ -387,7 +404,7 @@ const callSchema = z.object({
   idempotencyKey: z.string().uuid(),
   calledAt: z.coerce.date(),
   alternateMobile: z.string().max(30),
-  status: z.enum(["CONNECTED", "NOT_REACHABLE", "SWITCHED_OFF", "CALL_LATER", "WRONG_NUMBER", "VERIFICATION_COMPLETED"]),
+  status: z.enum(["CONNECTED", "NOT_REACHABLE", "SWITCHED_OFF", "CALL_LATER", "WRONG_NUMBER", "VERIFICATION_COMPLETED", "REJECTED"]),
   studentAvailability: z.string().max(200),
   personAnswered: z.string().max(120),
   nextFollowUpAt: z.union([z.coerce.date(), z.literal("")]).optional(),
@@ -410,14 +427,16 @@ export async function submitCallVerification(formData: FormData) {
   });
   if (!parsed.success) redirect("/volunteer/call-verifications?error=Check+the+call+details");
   const data = parsed.data;
+  if (data.status === "REJECTED" && data.comments.trim().length < 3) redirect("/volunteer/call-verifications?error=Add+a+rejection+reason+in+the+comments");
   const activity = data.activityId
     ? await prisma.activityAssignment.findFirst({
         where: { volunteerId: user.id, activityId: data.activityId, status: { notIn: ["SUBMITTED", "COMPLETED", "CANCELLED"] }, activity: { type: "CALL_VERIFICATION", applicantId: data.applicantId } },
         select: { id: true, activityId: true, status: true },
       })
     : null;
-  const applicant = await prisma.applicant.findUnique({ where: { id: data.applicantId }, select: { id: true, volunteerId: true } });
+  const applicant = await prisma.applicant.findUnique({ where: { id: data.applicantId }, select: { id: true, volunteerId: true, status: true } });
   if (!applicant || (applicant.volunteerId !== user.id && !activity)) redirect("/volunteer/call-verifications?error=Application+is+not+assigned+to+you");
+  if (!["SUBMITTED", "UNDER_VERIFICATION"].includes(applicant.status)) redirect("/volunteer/call-verifications?error=This+application+has+already+left+the+call+verification+stage");
   const prior = await prisma.callVerification.findUnique({ where: { idempotencyKey: data.idempotencyKey }, select: { id: true } });
   if (prior) redirect("/volunteer/call-verifications?saved=1");
   let attemptNumber = 0;
@@ -447,8 +466,24 @@ export async function submitCallVerification(formData: FormData) {
         idempotencyKey: data.idempotencyKey,
       },
     });
+    if (created.status === "REJECTED") {
+      const changed = await tx.applicant.updateMany({ where: { id: applicant.id, status: { in: ["SUBMITTED", "UNDER_VERIFICATION"] } }, data: { status: "REJECTED" } });
+      if (changed.count > 0) {
+        const rejectionEvent = await appendEvent(tx, {
+          aggregateType: "Applicant", aggregateId: applicant.id, type: "APPLICANT_REJECTED",
+          payload: { stage: "CALL_VERIFICATION", reason: created.comments, actorId: user.id },
+          idempotencyKey: `applicant-rejected:call:${data.idempotencyKey}`,
+        });
+        await appendEvent(tx, {
+          aggregateType: "Applicant", aggregateId: applicant.id, type: "APPLICANT_STATUS_CHANGED",
+          payload: { fromStatus: applicant.status, toStatus: "REJECTED", action: "CALL_VERIFICATION", reason: created.comments, actorId: user.id },
+          idempotencyKey: `call-rejected-status:${data.idempotencyKey}`,
+        });
+        await notifyApplicant(tx, applicant.id, rejectionEvent.id, "Application update", `Your application was not selected after call verification. Reason: ${created.comments}`);
+      }
+    }
     if (activity) {
-      if (created.status === "VERIFICATION_COMPLETED") {
+      if (["VERIFICATION_COMPLETED", "REJECTED"].includes(created.status)) {
         await tx.activityReport.create({
           data: {
             activityId: activity.activityId,
@@ -462,19 +497,22 @@ export async function submitCallVerification(formData: FormData) {
       }
       await tx.activityAssignment.update({
         where: { id: activity.id },
-        data: created.status === "VERIFICATION_COMPLETED"
+        data: ["VERIFICATION_COMPLETED", "REJECTED"].includes(created.status)
           ? { status: "SUBMITTED", completedAt: new Date() }
           : { status: "IN_PROGRESS", startedAt: new Date() },
       });
-      await tx.volunteerActivity.update({ where: { id: activity.activityId }, data: { status: created.status === "VERIFICATION_COMPLETED" ? "SUBMITTED" : "IN_PROGRESS" } });
+      await tx.volunteerActivity.update({ where: { id: activity.activityId }, data: { status: ["VERIFICATION_COMPLETED", "REJECTED"].includes(created.status) ? "SUBMITTED" : "IN_PROGRESS" } });
     }
-    await appendEvent(tx, {
+    const callEvent = await appendEvent(tx, {
       aggregateType: "Applicant",
       aggregateId: applicant.id,
       type: "CALL_VERIFICATION_RECORDED",
       payload: { callVerificationId: created.id, volunteerId: user.id, attemptNumber, status: created.status },
       idempotencyKey: `call-verification:${data.idempotencyKey}`,
     });
+    if (created.status === "VERIFICATION_COMPLETED") {
+      await notifyApplicant(tx, applicant.id, callEvent.id, "Call verification complete", "Your call verification is complete. The team will contact you about the physical verification visit.");
+    }
     if (activity) {
       await appendEvent(tx, {
         aggregateType: "VolunteerActivity",
@@ -540,6 +578,9 @@ export async function submitPhysicalVerification(formData: FormData) {
   });
   if (!parsed.success) redirect(`/volunteer/physical-verifications?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Check the visit details")}`);
   const data = parsed.data;
+  if (data.decision === "REJECTED" && data.observations.trim().length < 3) {
+    redirect(`/volunteer/physical-verifications?error=Add+a+reason+in+the+observations+field+before+rejecting`);
+  }
   const activityAssignment = data.activityId
     ? await prisma.activityAssignment.findFirst({
         where: { volunteerId: user.id, activityId: data.activityId, activity: { type: "PHYSICAL_VERIFICATION", applicantId: data.applicantId } },
@@ -548,6 +589,7 @@ export async function submitPhysicalVerification(formData: FormData) {
     : null;
   const applicant = await prisma.applicant.findUnique({ where: { id: data.applicantId }, select: { id: true, volunteerId: true, status: true } });
   if (!applicant || (applicant.volunteerId !== user.id && !activityAssignment)) redirect("/volunteer/physical-verifications?error=Application+is+not+assigned+to+you");
+  if (!["SUBMITTED", "UNDER_VERIFICATION"].includes(applicant.status)) redirect(`/volunteer/physical-verifications/${applicant.id}?error=This+application+has+already+left+the+verification+stage`);
   const previous = await prisma.physicalVerificationReport.findUnique({ where: { idempotencyKey: data.idempotencyKey }, select: { id: true } });
   if (previous) redirect(`/volunteer/physical-verifications/${applicant.id}?saved=1`);
 
@@ -665,13 +707,23 @@ export async function submitPhysicalVerification(formData: FormData) {
         idempotencyKey: `pv-activity:${data.idempotencyKey}`,
       });
     }
-    await appendEvent(tx, {
+    const reportEvent = await appendEvent(tx, {
       aggregateType: "Applicant",
       aggregateId: applicant.id,
       type: "PHYSICAL_VERIFICATION_SUBMITTED",
       payload: { reportId: created.id, decision: data.decision, actorId: user.id, evidenceCount: uploads.length },
       idempotencyKey: `pv:${data.idempotencyKey}`,
     });
+    if (data.decision === "REJECTED") {
+      await appendEvent(tx, {
+        aggregateType: "Applicant", aggregateId: applicant.id, type: "APPLICANT_REJECTED",
+        payload: { stage: "PHYSICAL_VERIFICATION", reason: data.observations, actorId: user.id },
+        idempotencyKey: `applicant-rejected:physical:${data.idempotencyKey}`,
+      });
+      await notifyApplicant(tx, applicant.id, reportEvent.id, "Application update", `Your application was not selected after physical verification. Reason: ${data.observations}`);
+    } else if (data.decision === "APPROVED") {
+      await notifyApplicant(tx, applicant.id, reportEvent.id, "Physical verification complete", "Your physical verification is complete. The next step is an online panel interview.");
+    }
     if (applicant.status !== nextStatus) {
       await appendEvent(tx, {
         aggregateType: "Applicant",

@@ -90,7 +90,7 @@ export default async function ApplyPage({
   return (
     <div className="bg-bg">
       <WizardShell lang={lang} step={step} maxStep={maxStep}>
-        {step === 1 && <PersonalStep lang={lang} applicant={applicant} error={params.error} />}
+        {step === 1 && <PersonalStep lang={lang} applicant={applicant} aadhaarLast4={applicant?.identityInfo?.aadhaarLast4} error={params.error} />}
         {step === 2 && applicant && <AcademicStep lang={lang} applicant={applicant} colleges={colleges} error={params.error} />}
         {step === 3 && <FamilyStep lang={lang} info={applicant?.sensitiveInfo ?? null} error={params.error} />}
         {step === 4 && <DocumentsStep lang={lang} documents={applicant?.documents ?? []} error={params.error} />}
@@ -98,6 +98,7 @@ export default async function ApplyPage({
           <ReviewStep
             lang={lang}
             applicant={applicant}
+            aadhaarLast4={applicant.identityInfo?.aadhaarLast4}
             college={college}
             info={applicant.sensitiveInfo}
             documents={applicant.documents}

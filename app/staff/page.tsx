@@ -16,7 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Select, Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { ApplicationStatus } from "@prisma/client";
-import { bulkShortlist, bulkSelect, bulkReject } from "./bulk-actions";
+import { bulkReject } from "./bulk-actions";
 
 const APPLICANT_STAGE_ORDER = [
   "DRAFT",
@@ -409,19 +409,12 @@ function BulkPipelineTable({
       <div className="mt-4 space-y-3 border-t border-border pt-4">
         <Field label="Reason (required for any bulk action below)" name="reason" placeholder="e.g. Below cutoff for this cycle's shortlist" required />
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" formAction={bulkShortlist} variant="secondary" size="sm">
-            Shortlist selected
-          </Button>
-          <Button type="submit" formAction={bulkSelect} variant="primary" size="sm">
-            Select selected
-          </Button>
           <Button type="submit" formAction={bulkReject} variant="danger" size="sm">
             Reject selected
           </Button>
         </div>
         <p className="text-xs text-ink-faint">
-          Shortlist works from submitted/verified; Select works from shortlisted/interviewed; Reject works from any
-          non-final status. Applicants in the wrong state for the chosen action are skipped, not failed.
+          Final selection is recorded after the offline meeting. Reject works from any non-final status. Applicants in the wrong state are skipped, not failed.
         </p>
       </div>
     </form>

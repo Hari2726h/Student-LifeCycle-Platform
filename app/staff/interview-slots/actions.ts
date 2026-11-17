@@ -8,6 +8,7 @@ import { auth } from "@/auth";
 const slotSchema = z.object({
   scheduledAt: z.coerce.date(),
   location: z.string().min(2),
+  meetingUrl: z.union([z.string().url().max(2000), z.literal("")]).optional(),
   capacity: z.coerce.number().int().min(1).max(20),
 });
 
@@ -18,6 +19,7 @@ export async function createInterviewSlot(formData: FormData) {
   const parsed = slotSchema.safeParse({
     scheduledAt: formData.get("scheduledAt"),
     location: formData.get("location"),
+    meetingUrl: formData.get("meetingUrl") ?? "",
     capacity: formData.get("capacity"),
   });
   if (!parsed.success) {
@@ -25,7 +27,7 @@ export async function createInterviewSlot(formData: FormData) {
   }
 
   await prisma.interviewSlot.create({
-    data: { ...parsed.data, createdById: session.user.id },
+    data: { ...parsed.data, meetingUrl: parsed.data.meetingUrl || null, createdById: session.user.id },
   });
 
   redirect("/staff/interview-slots");
