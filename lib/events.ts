@@ -21,9 +21,20 @@ const CHAIN_LOCK_KEY = 72176503;
  * hash from N onward. */
 export async function appendEvent(
   tx: Prisma.TransactionClient,
-  args: { aggregateType: string; aggregateId: string; type: string; payload: Prisma.InputJsonValue },
+  args: {
+    aggregateType: string;
+    aggregateId: string;
+    type: string;
+    payload: Prisma.InputJsonValue;
+    idempotencyKey?: string;
+  },
 ) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CHAIN_LOCK_KEY})`;
+
+  if (args.idempotencyKey) {
+    const existing = await tx.event.findUnique({ where: { idempotencyKey: args.idempotencyKey } });
+    if (existing) return existing;
+  }
 
   const last = await tx.event.findFirst({ orderBy: { sequence: "desc" }, select: { hash: true } });
   const prevHash = last?.hash ?? GENESIS_HASH;

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 
 const ROLE_HOME: Record<string, string> = {
   APPLICANT: "/applicant",
-  VOLUNTEER: "/staff",
+  VOLUNTEER: "/volunteer",
   COMMITTEE: "/staff",
   MENTOR: "/mentor",
   STUDENT: "/portal",

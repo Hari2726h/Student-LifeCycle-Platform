@@ -64,6 +64,7 @@ export function VerificationForm({ applicantId, verification }: { applicantId: s
     const form = e.currentTarget;
     const formData = new FormData(form);
     formData.set("applicantId", applicantId);
+    formData.set("idempotencyKey", crypto.randomUUID());
     // Unchecked checkboxes don't appear in FormData at all — the server
     // schema coerces "on"/missing into booleans, so make the "unchecked"
     // case explicit for both the live request and the offline-queued copy.

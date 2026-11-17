@@ -1,22 +1,6 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Fraunces } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
-  subsets: ["latin"],
-  axes: ["opsz", "SOFT"],
-});
 
 export const metadata: Metadata = {
   title: "Maatram Student Lifecycle Platform",
@@ -29,14 +13,15 @@ export const viewport = {
   themeColor: "#1f2937",
 };
 
-// Registered as a plain inline script (not a React effect) so it still
-// runs if a page crashes client-side rendering — install doesn't depend
-// on any component mounting successfully.
+// Registered through next/script so React does not render raw script tags
+// as components. Check readyState in case the load event already fired.
 const swRegisterScript = `
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", function () {
+  var register = function () {
     navigator.serviceWorker.register("/sw.js").catch(function () {});
-  });
+  };
+  if (document.readyState === "complete") register();
+  else window.addEventListener("load", register, { once: true });
 }
 `;
 
@@ -58,14 +43,22 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full antialiased`}
+      className="h-full antialiased"
       suppressHydrationWarning
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <script dangerouslySetInnerHTML={{ __html: swRegisterScript }} />
-      </head>
-      <body className="min-h-full flex flex-col bg-bg text-ink">{children}</body>
+      <body className="min-h-full flex flex-col bg-bg text-ink">
+        {children}
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+        />
+        <Script
+          id="service-worker-register"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{ __html: swRegisterScript }}
+        />
+      </body>
     </html>
   );
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { appendEvent, isRealStatusChange } from "@/lib/events";
 
@@ -10,6 +11,7 @@ export const verificationSchema = z.object({
   duplicateCheckPassed: z.coerce.boolean(),
   decision: z.enum(["APPROVED", "REJECTED", "NEEDS_FOLLOW_UP"]),
   notes: z.string().optional(),
+  idempotencyKey: z.string().uuid().optional(),
 });
 
 export type VerificationResult = { ok: true } | { ok: false; error: string };
@@ -52,22 +54,72 @@ export async function submitVerificationCore(
     duplicateCheckPassed: formData.get("duplicateCheckPassed"),
     decision: formData.get("decision"),
     notes: formData.get("notes") || undefined,
+    idempotencyKey: formData.get("idempotencyKey") || undefined,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const data = parsed.data;
+  const idempotencyKey = data.idempotencyKey ?? randomUUID();
+  const priorReport = await prisma.physicalVerificationReport.findUnique({ where: { idempotencyKey }, select: { id: true } });
+  if (priorReport) return { ok: true };
 
   const nextStatus =
     data.decision === "APPROVED" ? "VERIFIED" : data.decision === "REJECTED" ? "REJECTED" : "UNDER_VERIFICATION";
 
   await prisma.$transaction(async (tx) => {
+    const report = await tx.physicalVerificationReport.create({
+      data: {
+        applicantId,
+        volunteerId,
+        visitAt: new Date(),
+        incomeVerified: data.incomeBandVerified,
+        housingCondition: data.housingCondition,
+        confirmedHouseholdSize: data.householdSizeConfirmed,
+        photoEvidenceCollected: data.photoEvidenceConfirmed,
+        duplicateCheckPassed: data.duplicateCheckPassed,
+        decision: data.decision,
+        observations: data.notes ?? null,
+        idempotencyKey,
+      },
+    });
     await tx.verification.upsert({
       where: { applicantId },
       create: { applicantId, volunteerId, visitDate: new Date(), ...data },
       update: { visitDate: new Date(), ...data },
     });
     await tx.applicant.update({ where: { id: applicantId }, data: { status: nextStatus } });
+    await appendEvent(tx, {
+      aggregateType: "Applicant",
+      aggregateId: applicantId,
+      type: "PHYSICAL_VERIFICATION_SUBMITTED",
+      payload: { reportId: report.id, decision: data.decision, actorId: volunteerId },
+      idempotencyKey: `pv:${idempotencyKey}`,
+    });
+    const activityAssignment = await tx.activityAssignment.findFirst({
+      where: { volunteerId, activity: { type: "PHYSICAL_VERIFICATION", applicantId } },
+      select: { id: true, activityId: true },
+    });
+    if (activityAssignment) {
+      const activityReport = await tx.activityReport.create({
+        data: {
+          activityId: activityAssignment.activityId,
+          assignmentId: activityAssignment.id,
+          volunteerId,
+          payload: { physicalVerificationReportId: report.id, decision: data.decision, notes: data.notes ?? null },
+          idempotencyKey: `legacy-pv:${idempotencyKey}`,
+        },
+      });
+      await tx.activityAssignment.update({ where: { id: activityAssignment.id }, data: { status: "SUBMITTED", completedAt: new Date() } });
+      await tx.volunteerActivity.update({ where: { id: activityAssignment.activityId }, data: { status: "SUBMITTED" } });
+      await appendEvent(tx, {
+        aggregateType: "VolunteerActivity",
+        aggregateId: activityAssignment.activityId,
+        type: "PHYSICAL_VERIFICATION_SUBMITTED",
+        payload: { reportId: activityReport.id, physicalVerificationReportId: report.id, volunteerId },
+        idempotencyKey: `legacy-pv-activity:${idempotencyKey}`,
+      });
+    }
     if (isRealStatusChange(applicant.status, nextStatus)) {
       await appendEvent(tx, {
         aggregateType: "Applicant",

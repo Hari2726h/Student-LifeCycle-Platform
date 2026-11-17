@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   experimental: {
     agentUpgrade: "security",
+    serverActions: { bodySizeLimit: "34mb" },
   },
   /* This app is entirely per-request, auth-scoped data (dashboards, session-
    * gated queries) — Cache Components' prerendering model fights that, so

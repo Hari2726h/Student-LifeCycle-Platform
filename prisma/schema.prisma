@@ -67,6 +67,61 @@ enum VerificationDecision {
   NEEDS_FOLLOW_UP
 }
 
+enum VolunteerActivityType {
+  PHYSICAL_VERIFICATION
+  CALL_VERIFICATION
+  TUTORING
+  SCHOOL_VISIT
+  SANTA_PROGRAMME
+  OTHER
+}
+
+enum VolunteerActivityStatus {
+  PLANNED
+  ASSIGNED
+  IN_PROGRESS
+  SUBMITTED
+  COMPLETED
+  FOLLOW_UP
+  CANCELLED
+}
+
+enum VolunteerActivityPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ActivityReviewStatus {
+  PENDING
+  APPROVED
+  FOLLOW_UP
+}
+
+enum CallVerificationStatus {
+  CONNECTED
+  NOT_REACHABLE
+  SWITCHED_OFF
+  CALL_LATER
+  WRONG_NUMBER
+  VERIFICATION_COMPLETED
+}
+
+enum ActivityExpenseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SchoolInterestStatus {
+  NEW
+  CONTACTED
+  APPLICATION_STARTED
+  APPLIED
+  NOT_INTERESTED
+}
+
 enum InterviewDecision {
   PENDING
   SHORTLISTED
@@ -122,6 +177,10 @@ enum DocumentKind {
   INCOME_PROOF
   MARK_SHEET
   PHOTO
+  HOUSE_PHOTO
+  STUDENT_PHOTO
+  ADDRESS_PROOF
+  SUPPORTING_DOCUMENT
   CERTIFICATE_PROOF
   OFFER_LETTER
 }
@@ -161,10 +220,11 @@ model User {
   // throttle otherwise). Reset to 0 whenever a fresh code is issued.
   otpAttempts     Int       @default(0)
 
+
   // Volunteers' coverage area — the basis for geo-assigning the
   // verification queue. Unused by other roles.
-  district        String?
-  pincodes        String[] @default([])
+  district String?
+  pincodes String[] @default([])
 
   // One account can hold exactly one of each profile across its lifetime
   applicant      Applicant? @relation("ApplicantAccount")
@@ -172,17 +232,28 @@ model User {
   mentorProfile  Mentor?
 
   // Operational relations (this user acting on other people's records)
-  volunteerAssignments Applicant[]      @relation("AssignedVolunteer")
-  verificationsDone    Verification[]
-  interviewDecisions   InterviewRecord[] @relation("InterviewDecidedBy")
-  interviewScoresGiven InterviewScore[]
-  interviewSlotsCreated InterviewSlot[]
-  mentorLogsResolved   MentorLog[]      @relation("RiskResolvedBy")
-  documentsUploaded    Document[]
-  notifications        Notification[]
-  followUpsAssigned    FollowUpAction[] @relation("FollowUpAssignee")
-  followUpsCreated     FollowUpAction[] @relation("FollowUpCreatedBy")
-  webhookSubscriptions WebhookSubscription[]
+  volunteerAssignments        Applicant[]                  @relation("AssignedVolunteer")
+  verificationsDone           Verification[]
+  interviewDecisions          InterviewRecord[]            @relation("InterviewDecidedBy")
+  interviewScoresGiven        InterviewScore[]
+  interviewSlotsCreated       InterviewSlot[]
+  mentorLogsResolved          MentorLog[]                  @relation("RiskResolvedBy")
+  documentsUploaded           Document[]
+  notifications               Notification[]
+  followUpsAssigned           FollowUpAction[]             @relation("FollowUpAssignee")
+  followUpsCreated            FollowUpAction[]             @relation("FollowUpCreatedBy")
+  webhookSubscriptions        WebhookSubscription[]
+  volunteerProfile            VolunteerProfile?
+  activityAssignments         ActivityAssignment[]
+  createdActivities           VolunteerActivity[]          @relation("ActivityCreator")
+  activityReports             ActivityReport[]             @relation("ActivityReportVolunteer")
+  reviewedActivityReports     ActivityReport[]             @relation("ActivityReportReviewer")
+  callVerifications           CallVerification[]
+  physicalVerificationReports PhysicalVerificationReport[]
+  activityExpenses            ActivityExpense[]            @relation("ExpenseVolunteer")
+  reviewedActivityExpenses    ActivityExpense[]            @relation("ExpenseReviewer")
+  schoolInterestsCreated      SchoolVisitInterest[]
+  tutoringSessions            TutoringSession[]            @relation("TutoringVolunteer")
 
   @@index([role])
 }
@@ -192,45 +263,49 @@ model User {
 // ──────────────────────────────────────────────────────────────────────────
 
 model Applicant {
-  id               String   @id @default(cuid())
-  user             User     @relation("ApplicantAccount", fields: [userId], references: [id])
-  userId           String   @unique
+  id     String @id @default(cuid())
+  user   User   @relation("ApplicantAccount", fields: [userId], references: [id])
+  userId String @unique
 
-  fullName         String
-  dob              DateTime
-  gender           Gender
-  phone            String
-  email            String?
-  district         String
+  fullName           String
+  dob                DateTime
+  gender             Gender
+  phone              String
+  email              String?
+  district           String
   // Filled a step later than the row is created (academic-details step),
   // so these stay nullable to support progressive save-as-you-go.
-  boardPercentage  Float?
-  courseInterest   String?
-  preferredCollege College? @relation(fields: [preferredCollegeId], references: [id])
+  boardPercentage    Float?
+  courseInterest     String?
+  preferredCollege   College? @relation(fields: [preferredCollegeId], references: [id])
   preferredCollegeId String?
 
-  status           ApplicationStatus @default(DRAFT)
+  status ApplicationStatus @default(DRAFT)
 
   // Set once, at creation, to whichever cycle is open that day — stays
   // fixed even if the cycle closes before the applicant finishes (an
   // already-started draft is grandfathered in; only *new* drafts require
   // an open cycle). Nullable only because applicants that predate cycles
   // existing need somewhere to land.
-  cycle            AdmissionCycle? @relation(fields: [cycleId], references: [id])
-  cycleId          String?
+  cycle   AdmissionCycle? @relation(fields: [cycleId], references: [id])
+  cycleId String?
 
-  volunteer        User?    @relation("AssignedVolunteer", fields: [volunteerId], references: [id])
-  volunteerId      String?
+  volunteer   User?   @relation("AssignedVolunteer", fields: [volunteerId], references: [id])
+  volunteerId String?
 
-  sensitiveInfo    ApplicantSensitiveInfo?
-  verification     Verification?
-  interview         InterviewRecord?
-  documents        Document[]
-  student           Student?
-  karpomAsJunior   KarpomSession[]
+  sensitiveInfo               ApplicantSensitiveInfo?
+  verification                Verification?
+  callVerifications           CallVerification[]
+  physicalVerificationReports PhysicalVerificationReport[]
+  volunteerActivities         VolunteerActivity[]
+  schoolVisitInterests        SchoolVisitInterest[]
+  interview                   InterviewRecord?
+  documents                   Document[]
+  student                     Student?
+  karpomAsJunior              KarpomSession[]
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([district])
@@ -241,10 +316,10 @@ model Applicant {
 // one, new drafts can only start while it's open, and cycles are the
 // basis for year-over-year comparison on /staff/cycles.
 model AdmissionCycle {
-  id         String      @id @default(cuid())
-  year       Int         @unique
-  opensAt    DateTime
-  closesAt   DateTime
+  id       String   @id @default(cuid())
+  year     Int      @unique
+  opensAt  DateTime
+  closesAt DateTime
 
   applicants Applicant[]
   createdAt  DateTime    @default(now())
@@ -253,44 +328,325 @@ model AdmissionCycle {
 // Deliberately isolated from Applicant so operational dashboards (pipeline
 // view, status boards) never need to query identity-sensitive fields.
 model ApplicantSensitiveInfo {
-  id               String   @id @default(cuid())
-  applicant        Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
-  applicantId      String   @unique
+  id          String    @id @default(cuid())
+  applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId String    @unique
 
-  addressLine1     String
-  addressLine2     String?
-  pincode          String
-  guardianName     String
-  guardianPhone    String
-  annualIncomeInr  Int?
-  householdSize    Int?
-  familySituation  FamilySituation
+  addressLine1    String
+  addressLine2    String?
+  pincode         String
+  guardianName    String
+  guardianPhone   String
+  annualIncomeInr Int?
+  householdSize   Int?
+  familySituation FamilySituation
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Verification {
-  id                     String   @id @default(cuid())
-  applicant              Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
-  applicantId            String   @unique
+  id          String    @id @default(cuid())
+  applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId String    @unique
 
-  volunteer              User     @relation(fields: [volunteerId], references: [id])
-  volunteerId            String
+  volunteer   User   @relation(fields: [volunteerId], references: [id])
+  volunteerId String
 
   visitDate              DateTime?
-  incomeBandVerified     Boolean  @default(false)
+  incomeBandVerified     Boolean              @default(false)
   housingCondition       HousingCondition?
   householdSizeConfirmed Int?
-  photoEvidenceConfirmed Boolean  @default(false)
-  duplicateCheckPassed   Boolean  @default(true)
+  photoEvidenceConfirmed Boolean              @default(false)
+  duplicateCheckPassed   Boolean              @default(true)
   decision               VerificationDecision @default(PENDING)
   notes                  String?
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([decision])
+}
+
+// Volunteer self-service details are kept separate from authentication and
+// can only be changed by the volunteer who owns this profile.
+model VolunteerProfile {
+  id              String   @id @default(cuid())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String   @unique
+  profilePhotoUrl String?
+  address         String?
+  skills          String[] @default([])
+  interests       String[] @default([])
+  availability    String?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+}
+
+model VolunteerActivity {
+  id                  String                    @id @default(cuid())
+  idempotencyKey      String                    @unique
+  type                VolunteerActivityType
+  name                String
+  description         String
+  subject             String?
+  learningLevel       String?
+  location            String?
+  startsAt            DateTime
+  reportingAt         DateTime?
+  dueAt               DateTime?
+  schoolName          String?
+  schoolAddress       String?
+  schoolDistrict      String?
+  schoolContactPerson String?
+  schoolContactNumber String?
+  priority            VolunteerActivityPriority @default(NORMAL)
+  status              VolunteerActivityStatus   @default(PLANNED)
+  applicant           Applicant?                @relation(fields: [applicantId], references: [id])
+  applicantId         String?
+  student             Student?                  @relation(fields: [studentId], references: [id])
+  studentId           String?
+  createdBy           User                      @relation("ActivityCreator", fields: [createdById], references: [id])
+  createdById         String
+  assignments         ActivityAssignment[]
+  reports             ActivityReport[]
+  expenses            ActivityExpense[]
+  tutoringSessions    TutoringSession[]
+  santaBeneficiaries  SantaBeneficiary[]
+  schoolInterests     SchoolVisitInterest[]
+  callVerifications   CallVerification[]
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  @@index([type, status])
+  @@index([startsAt, dueAt])
+  @@index([applicantId])
+  @@index([studentId])
+}
+
+model ActivityAssignment {
+  id               String                  @id @default(cuid())
+  activity         VolunteerActivity       @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId       String
+  volunteer        User                    @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+  volunteerId      String
+  responsibility   String?
+  status           VolunteerActivityStatus @default(ASSIGNED)
+  assignedAt       DateTime                @default(now())
+  startedAt        DateTime?
+  completedAt      DateTime?
+  reports          ActivityReport[]
+  expenses         ActivityExpense[]
+  tutoringSessions TutoringSession[]
+
+  @@unique([activityId, volunteerId])
+  @@index([volunteerId, status])
+}
+
+// Reports are append-only submissions; review actions update only their
+// review state and never replace the submitted payload.
+model ActivityReport {
+  id             String               @id @default(cuid())
+  activity       VolunteerActivity    @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId     String
+  assignment     ActivityAssignment   @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentId   String
+  volunteer      User                 @relation("ActivityReportVolunteer", fields: [volunteerId], references: [id])
+  volunteerId    String
+  payload        Json
+  hours          Float                @default(0)
+  reviewStatus   ActivityReviewStatus @default(PENDING)
+  reviewNote     String?
+  reviewedBy     User?                @relation("ActivityReportReviewer", fields: [reviewedById], references: [id])
+  reviewedById   String?
+  reviewedAt     DateTime?
+  idempotencyKey String               @unique
+  evidence       ActivityEvidence[]
+  createdAt      DateTime             @default(now())
+
+  @@index([activityId, createdAt])
+  @@index([volunteerId, createdAt])
+}
+
+model ActivityEvidence {
+  id           String         @id @default(cuid())
+  report       ActivityReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId     String
+  storageKey   String         @unique
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  uploadedById String
+  createdAt    DateTime       @default(now())
+
+  @@index([reportId])
+}
+
+model CallVerification {
+  id                  String                 @id @default(cuid())
+  applicant           Applicant              @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId         String
+  volunteer           User                   @relation(fields: [volunteerId], references: [id])
+  volunteerId         String
+  activity            VolunteerActivity?     @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  activityId          String?
+  calledAt            DateTime
+  attemptNumber       Int
+  alternateMobile     String?
+  status              CallVerificationStatus
+  identityConfirmed   Boolean                @default(false)
+  addressConfirmed    Boolean                @default(false)
+  familyConfirmed     Boolean                @default(false)
+  incomeConfirmed     Boolean                @default(false)
+  educationConfirmed  Boolean                @default(false)
+  admissionInterest   Boolean                @default(false)
+  studentAvailability String?
+  personAnswered      String?
+  followUpRequired    Boolean                @default(false)
+  nextFollowUpAt      DateTime?
+  comments            String?
+  idempotencyKey      String                 @unique
+  createdAt           DateTime               @default(now())
+
+  @@unique([applicantId, attemptNumber])
+  @@index([volunteerId, calledAt])
+}
+
+model PhysicalVerificationReport {
+  id                      String               @id @default(cuid())
+  applicant               Applicant            @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId             String
+  volunteer               User                 @relation(fields: [volunteerId], references: [id])
+  volunteerId             String
+  visitAt                 DateTime
+  personMet               String?
+  relationshipToStudent   String?
+  visitLocation           String?
+  identityVerified        Boolean              @default(false)
+  addressVerified         Boolean              @default(false)
+  incomeVerified          Boolean              @default(false)
+  housingVerified         Boolean              @default(false)
+  householdConfirmed      Boolean              @default(false)
+  photoEvidenceCollected  Boolean              @default(false)
+  duplicateCheckPassed    Boolean              @default(false)
+  housingCondition        HousingCondition?
+  confirmedHouseholdSize  Int?
+  earningMembers          Int?
+  dependents              Int?
+  financialCondition      String?
+  guardianOccupation      String?
+  higherEducationInterest String?
+  pvReason                String?
+  familyCircumstances     String?
+  educationInterest       String?
+  observations            String?
+  recommendation          String?
+  decision                VerificationDecision
+  idempotencyKey          String               @unique
+  createdAt               DateTime             @default(now())
+
+  @@index([applicantId, createdAt])
+  @@index([volunteerId, createdAt])
+}
+
+model TutoringSession {
+  id             String              @id @default(cuid())
+  activity       VolunteerActivity?  @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  activityId     String?
+  assignment     ActivityAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  assignmentId   String?
+  student        Student?            @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  studentId      String?
+  volunteer      User                @relation("TutoringVolunteer", fields: [volunteerId], references: [id])
+  volunteerId    String
+  studentName    String
+  subject        String
+  topic          String
+  sessionAt      DateTime
+  startTime      String?
+  endTime        String?
+  durationHours  Float               @default(1)
+  mode           String
+  attendance     String
+  understanding  String?
+  homework       String?
+  comments       String?
+  nextSessionAt  DateTime?
+  assessmentMark Float?
+  idempotencyKey String              @unique
+  createdAt      DateTime            @default(now())
+
+  @@index([volunteerId, sessionAt])
+  @@index([studentId, sessionAt])
+}
+
+model ActivityExpense {
+  id             String                @id @default(cuid())
+  activity       VolunteerActivity     @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId     String
+  assignment     ActivityAssignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentId   String
+  volunteer      User                  @relation("ExpenseVolunteer", fields: [volunteerId], references: [id])
+  volunteerId    String
+  description    String
+  category       String
+  expenseAt      DateTime
+  amount         Decimal               @db.Decimal(10, 2)
+  receiptKey     String?
+  receiptName    String?
+  status         ActivityExpenseStatus @default(PENDING)
+  reviewedById   String?
+  reviewedBy     User?                 @relation("ExpenseReviewer", fields: [reviewedById], references: [id])
+  reviewedAt     DateTime?
+  reviewNote     String?
+  idempotencyKey String                @unique
+  createdAt      DateTime              @default(now())
+
+  @@index([activityId, status])
+  @@index([volunteerId, expenseAt])
+}
+
+// Child beneficiary PII is restricted to staff and excluded from volunteer
+// portal queries unless a separately authorized event workflow requires it.
+model SantaBeneficiary {
+  id                 String            @id @default(cuid())
+  activity           VolunteerActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId         String
+  childName          String
+  age                Int
+  giftCategory       String
+  giftAssigned       String?
+  distributionStatus String            @default("PLANNED")
+  receivedConfirmed  Boolean           @default(false)
+  idempotencyKey     String            @unique
+  createdAt          DateTime          @default(now())
+
+  @@index([activityId])
+}
+
+model SchoolVisitInterest {
+  id                      String               @id @default(cuid())
+  activity                VolunteerActivity    @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId              String
+  recordedBy              User                 @relation(fields: [recordedById], references: [id])
+  recordedById            String
+  studentName             String
+  classOrYear             String
+  contactNumber           String?
+  contactConsent          Boolean              @default(false)
+  courseInterest          String?
+  higherEducationInterest String?
+  financialSupportNeeded  Boolean              @default(false)
+  followUpRequired        Boolean              @default(false)
+  status                  SchoolInterestStatus @default(NEW)
+  applicant               Applicant?           @relation(fields: [applicantId], references: [id], onDelete: SetNull)
+  applicantId             String?              @unique
+  notes                   String?
+  idempotencyKey          String               @unique
+  createdAt               DateTime             @default(now())
+
+  @@index([activityId, status])
+  @@index([recordedById, createdAt])
 }
 
 // A committee member's declared availability — "panel availability" — that
@@ -302,52 +658,52 @@ model InterviewSlot {
   location    String
   capacity    Int      @default(3)
 
-  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdBy   User   @relation(fields: [createdById], references: [id])
   createdById String
 
-  interviews  InterviewRecord[]
+  interviews InterviewRecord[]
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([scheduledAt])
 }
 
 model InterviewRecord {
-  id             String   @id @default(cuid())
-  applicant      Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
-  applicantId    String   @unique
+  id          String    @id @default(cuid())
+  applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId String    @unique
 
-  slot           InterviewSlot? @relation(fields: [slotId], references: [id])
-  slotId         String?
-  scheduledAt    DateTime?
-  location       String?
-  decision       InterviewDecision @default(PENDING)
-  decidedAt      DateTime?
-  decidedBy      User?    @relation("InterviewDecidedBy", fields: [decidedById], references: [id])
-  decidedById    String?
+  slot        InterviewSlot?    @relation(fields: [slotId], references: [id])
+  slotId      String?
+  scheduledAt DateTime?
+  location    String?
+  decision    InterviewDecision @default(PENDING)
+  decidedAt   DateTime?
+  decidedBy   User?             @relation("InterviewDecidedBy", fields: [decidedById], references: [id])
+  decidedById String?
 
-  scores         InterviewScore[]
+  scores InterviewScore[]
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([decision])
 }
 
 model InterviewScore {
-  id                String   @id @default(cuid())
-  interview         InterviewRecord @relation(fields: [interviewId], references: [id], onDelete: Cascade)
-  interviewId       String
-  panelist          User     @relation(fields: [panelistId], references: [id])
-  panelistId        String
+  id          String          @id @default(cuid())
+  interview   InterviewRecord @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  interviewId String
+  panelist    User            @relation(fields: [panelistId], references: [id])
+  panelistId  String
 
-  academicMerit     Int // 1–10
-  financialNeed     Int // 1–10
-  communication     Int // 1–10
-  intentClarity     Int // 1–10
-  notes             String?
+  academicMerit Int // 1–10
+  financialNeed Int // 1–10
+  communication Int // 1–10
+  intentClarity Int // 1–10
+  notes         String?
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@unique([interviewId, panelistId])
 }
@@ -357,21 +713,21 @@ model InterviewScore {
 // ──────────────────────────────────────────────────────────────────────────
 
 model College {
-  id         String      @id @default(cuid())
-  name       String
-  type       CollegeType
-  district   String
-  isPartner  Boolean     @default(true)
+  id        String      @id @default(cuid())
+  name      String
+  type      CollegeType
+  district  String
+  isPartner Boolean     @default(true)
 
   applicants Applicant[]
   students   Student[]
 }
 
 model CourseCatalog {
-  id             String   @id @default(cuid())
-  name           String
-  issuer         String
-  category       String?
+  id       String  @id @default(cuid())
+  name     String
+  issuer   String
+  category String?
 
   certifications Certification[]
 }
@@ -381,113 +737,115 @@ model CourseCatalog {
 // ──────────────────────────────────────────────────────────────────────────
 
 model Student {
-  id             String   @id @default(cuid())
-  user           User     @relation(fields: [userId], references: [id])
-  userId         String   @unique
-  applicant      Applicant @relation(fields: [applicantId], references: [id])
-  applicantId    String   @unique
+  id          String    @id @default(cuid())
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String    @unique
+  applicant   Applicant @relation(fields: [applicantId], references: [id])
+  applicantId String    @unique
 
-  college        College  @relation(fields: [collegeId], references: [id])
-  collegeId      String
-  program        String
-  admissionYear  Int
-  status         StudentStatus @default(ONBOARDING)
+  college       College       @relation(fields: [collegeId], references: [id])
+  collegeId     String
+  program       String
+  admissionYear Int
+  status        StudentStatus @default(ONBOARDING)
 
-  mentor         Mentor?  @relation(fields: [mentorId], references: [id])
-  mentorId       String?
+  mentor   Mentor? @relation(fields: [mentorId], references: [id])
+  mentorId String?
 
-  sponsorship       SponsorshipCoverage?
-  mentorLogs        MentorLog[]
-  certifications    Certification[]
-  academicRecords   AcademicRecord[]
-  placement         Placement?
-  alumniProfile     AlumniProfile?
-  documents         Document[]
-  followUps         FollowUpAction[]
-  notifications     Notification[]
+  sponsorship         SponsorshipCoverage?
+  mentorLogs          MentorLog[]
+  certifications      Certification[]
+  academicRecords     AcademicRecord[]
+  placement           Placement?
+  alumniProfile       AlumniProfile?
+  documents           Document[]
+  volunteerActivities VolunteerActivity[]
+  tutoringSessions    TutoringSession[]
+  followUps           FollowUpAction[]
+  notifications       Notification[]
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([mentorId])
 }
 
 model SponsorshipCoverage {
-  id                String  @id @default(cuid())
-  student           Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studentId         String  @unique
+  id        String  @id @default(cuid())
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String  @unique
 
-  tuitionCovered    Boolean @default(true)
-  hostelCovered     Boolean @default(true)
-  foodCovered       Boolean @default(true)
-  transportCovered  Boolean @default(true)
-  materialsCovered  Boolean @default(true)
-  notes             String?
+  tuitionCovered   Boolean @default(true)
+  hostelCovered    Boolean @default(true)
+  foodCovered      Boolean @default(true)
+  transportCovered Boolean @default(true)
+  materialsCovered Boolean @default(true)
+  notes            String?
 }
 
 model Mentor {
-  id          String     @id @default(cuid())
-  user        User       @relation(fields: [userId], references: [id])
-  userId      String     @unique
+  id     String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique
 
-  type        MentorType
-  specialty   String?
-  district    String?
-  maxLoad     Int        @default(15)
+  type      MentorType
+  specialty String?
+  district  String?
+  maxLoad   Int        @default(15)
   // Lets an alumnus opt out of new mentor matches without losing history
   // with students they already mentor — see lib/mentor-matching.ts.
-  isActive    Boolean    @default(true)
+  isActive  Boolean    @default(true)
 
-  mentees     Student[]
-  logs        MentorLog[]
+  mentees Student[]
+  logs    MentorLog[]
 
-  createdAt   DateTime   @default(now())
+  createdAt DateTime @default(now())
 }
 
 model MentorLog {
-  id             String       @id @default(cuid())
-  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studentId      String
-  mentor         Mentor       @relation(fields: [mentorId], references: [id])
-  mentorId       String
+  id        String  @id @default(cuid())
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
+  mentor    Mentor  @relation(fields: [mentorId], references: [id])
+  mentorId  String
 
-  category       RiskCategory
-  severity       RiskSeverity @default(LOW)
-  note           String
-  isRiskFlag     Boolean      @default(false)
+  category   RiskCategory
+  severity   RiskSeverity @default(LOW)
+  note       String
+  isRiskFlag Boolean      @default(false)
 
-  resolvedAt     DateTime?
-  resolvedBy     User?        @relation("RiskResolvedBy", fields: [resolvedById], references: [id])
-  resolvedById   String?
+  resolvedAt   DateTime?
+  resolvedBy   User?     @relation("RiskResolvedBy", fields: [resolvedById], references: [id])
+  resolvedById String?
 
-  createdAt      DateTime     @default(now())
+  createdAt DateTime @default(now())
 
   @@index([studentId])
   @@index([isRiskFlag])
 }
 
 model Certification {
-  id              String   @id @default(cuid())
-  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  id              String         @id @default(cuid())
+  student         Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId       String
   courseCatalog   CourseCatalog? @relation(fields: [courseCatalogId], references: [id])
   courseCatalogId String?
 
-  name            String
-  issuer          String?
-  status          CertificationStatus @default(IN_PROGRESS)
-  startedAt       DateTime?
-  completedAt     DateTime?
+  name        String
+  issuer      String?
+  status      CertificationStatus @default(IN_PROGRESS)
+  startedAt   DateTime?
+  completedAt DateTime?
 
-  documents       Document[]
-  createdAt       DateTime @default(now())
+  documents Document[]
+  createdAt DateTime   @default(now())
 }
 
 model AcademicRecord {
-  id                String   @id @default(cuid())
-  student           Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studentId         String
+  id        String  @id @default(cuid())
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
 
   semester          Int
   gpa               Float
@@ -502,44 +860,44 @@ model AcademicRecord {
 // ──────────────────────────────────────────────────────────────────────────
 
 model Placement {
-  id                String    @id @default(cuid())
-  student           Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studentId         String    @unique
+  id        String  @id @default(cuid())
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String  @unique
 
-  company           String
-  role              String
-  packageInrLakhs   Float?
-  joiningDate       DateTime?
+  company         String
+  role            String
+  packageInrLakhs Float?
+  joiningDate     DateTime?
 
-  documents         Document[]
-  createdAt         DateTime  @default(now())
+  documents Document[]
+  createdAt DateTime   @default(now())
 }
 
 model AlumniProfile {
-  id              String   @id @default(cuid())
-  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studentId       String   @unique
+  id        String  @id @default(cuid())
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String  @unique
 
   // A materialized projection, not a source of truth — these are only ever
   // written by lib/alumni-career.ts's recomputeProjection(), replaying
   // careerEvents in order. Never set directly from a form.
-  currentRole     String?
-  currentCompany  String?
+  currentRole    String?
+  currentCompany String?
 
   bio             String?
   // Toggled from /portal — when set true, lib/alumni-mentoring.ts
   // provisions a real Mentor(type=ALUMNI) row so this person actually
   // starts showing up in suggestMentors() for current students, not just
   // a label nobody reads.
-  mentoringOptIn  Boolean  @default(false)
+  mentoringOptIn  Boolean @default(false)
   availability    String?
   // A lighter-weight signal than mentoring: "ask me for a referral",
   // surfaced as a badge on the staff alumni directory.
-  openToReferrals Boolean  @default(false)
+  openToReferrals Boolean @default(false)
 
-  careerEvents    CareerEvent[]
-  karpomSessions  KarpomSession[]
-  createdAt       DateTime @default(now())
+  careerEvents   CareerEvent[]
+  karpomSessions KarpomSession[]
+  createdAt      DateTime        @default(now())
 }
 
 enum CareerEventSource {
@@ -552,9 +910,9 @@ enum CareerEventSource {
 // correction is a new event, never an edit to an old one. AlumniProfile's
 // currentCompany/currentRole/isCurrent are derived from this by replay.
 model CareerEvent {
-  id                String            @id @default(cuid())
-  alumniProfile     AlumniProfile     @relation(fields: [alumniProfileId], references: [id], onDelete: Cascade)
-  alumniProfileId   String
+  id              String        @id @default(cuid())
+  alumniProfile   AlumniProfile @relation(fields: [alumniProfileId], references: [id], onDelete: Cascade)
+  alumniProfileId String
 
   source            CareerEventSource
   company           String // as entered/reported, verbatim
@@ -566,9 +924,9 @@ model CareerEvent {
 
   // Recomputed by the replay projection whenever this alumnus's history
   // changes — never set directly by the form that creates the event.
-  isCurrent         Boolean           @default(false)
+  isCurrent Boolean @default(false)
 
-  createdAt         DateTime          @default(now())
+  createdAt DateTime @default(now())
 
   @@index([alumniProfileId])
   @@index([companyNormalized, isCurrent])
@@ -578,7 +936,7 @@ model CareerEvent {
 // The junior is usually outside the platform entirely (a school student),
 // so this is deliberately free-text rather than forced into Applicant.
 model KarpomSession {
-  id              String   @id @default(cuid())
+  id              String        @id @default(cuid())
   alumni          AlumniProfile @relation(fields: [alumniProfileId], references: [id], onDelete: Cascade)
   alumniProfileId String
 
@@ -587,11 +945,11 @@ model KarpomSession {
   juniorName        String?
   juniorContact     String?
 
-  subject         String
-  sessionDate     DateTime
-  notes           String?
+  subject     String
+  sessionDate DateTime
+  notes       String?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -599,26 +957,26 @@ model KarpomSession {
 // ──────────────────────────────────────────────────────────────────────────
 
 model Document {
-  id              String       @id @default(cuid())
-  kind            DocumentKind
-  storageKey      String // Supabase Storage object path in production
-  fileName        String
-  mimeType        String
-  sizeBytes       Int
+  id         String       @id @default(cuid())
+  kind       DocumentKind
+  storageKey String // Supabase Storage object path in production
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
 
-  uploadedBy      User   @relation(fields: [uploadedById], references: [id])
-  uploadedById    String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+  uploadedById String
 
-  applicant       Applicant? @relation(fields: [applicantId], references: [id])
+  applicant       Applicant?     @relation(fields: [applicantId], references: [id])
   applicantId     String?
-  student         Student?   @relation(fields: [studentId], references: [id])
+  student         Student?       @relation(fields: [studentId], references: [id])
   studentId       String?
   certification   Certification? @relation(fields: [certificationId], references: [id])
   certificationId String?
-  placement       Placement? @relation(fields: [placementId], references: [id])
+  placement       Placement?     @relation(fields: [placementId], references: [id])
   placementId     String?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 // Hardened properly in Phase 5 (immutability, full coverage); the table
@@ -630,24 +988,25 @@ model Document {
 // ──────────────────────────────────────────────────────────────────────────
 
 model Event {
-  id            String   @id @default(cuid())
+  id       String @id @default(cuid())
   // Assigned by Postgres at INSERT time, strictly increasing — the cursor
   // workers bookmark against. See lib/events.ts for why a time-based cursor
   // alone isn't safe (events can commit out of sequence order).
-  sequence      Int      @default(autoincrement()) @unique
+  sequence Int    @unique @default(autoincrement())
 
   aggregateType String // e.g. "Applicant", "MentorLog", "CareerEvent"
   aggregateId   String
   type          String // e.g. "RISK_FLAG_LOGGED", "APPLICANT_STATUS_CHANGED"
   payload       Json
 
-  occurredAt    DateTime @default(now())
+  occurredAt DateTime @default(now())
 
   // Tamper-evident hash chain — see lib/event-integrity.ts. `hash` commits
   // to this row's own content plus `prevHash`, which must equal the
   // previous row's `hash`; verifyEventChain() recomputes both end to end.
-  hash          String
-  prevHash      String
+  hash           String
+  prevHash       String
+  idempotencyKey String? @unique
 
   @@index([type, sequence])
   @@index([aggregateType, aggregateId])
@@ -670,24 +1029,24 @@ model ReplayBookmark {
 // every active staff user when a mentor logs a risk flag (or when a mentee
 // goes stale), and surfaced via an unread badge in the staff shell.
 model Notification {
-  id          String           @id @default(cuid())
-  recipient   User             @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  id          String @id @default(cuid())
+  recipient   User   @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   recipientId String
 
-  type        NotificationType
-  title       String
-  body        String
+  type  NotificationType
+  title String
+  body  String
 
-  student     Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studentId   String?
+  student   Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String?
 
   // The event this notification was derived from. The (sourceEventId,
   // recipientId) pair is what makes the worker replay-safe: reprocessing
   // the same event upserts the same row instead of sending it twice.
   sourceEventId String?
 
-  read        Boolean          @default(false)
-  createdAt   DateTime         @default(now())
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
 
   @@unique([sourceEventId, recipientId])
   @@index([recipientId, read])
@@ -696,20 +1055,20 @@ model Notification {
 // Makes the at-risk dashboard a worklist instead of a report: staff assign
 // a concrete next action against a flagged student, not just read about it.
 model FollowUpAction {
-  id           String         @id @default(cuid())
-  student      Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studentId    String
+  id        String  @id @default(cuid())
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
 
-  note         String
-  status       FollowUpStatus @default(OPEN)
+  note   String
+  status FollowUpStatus @default(OPEN)
 
-  assignedTo   User           @relation("FollowUpAssignee", fields: [assignedToId], references: [id])
+  assignedTo   User   @relation("FollowUpAssignee", fields: [assignedToId], references: [id])
   assignedToId String
-  createdBy    User           @relation("FollowUpCreatedBy", fields: [createdById], references: [id])
+  createdBy    User   @relation("FollowUpCreatedBy", fields: [createdById], references: [id])
   createdById  String
 
-  createdAt    DateTime       @default(now())
-  resolvedAt   DateTime?
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
 
   @@index([studentId, status])
   @@index([assignedToId, status])
@@ -722,17 +1081,17 @@ model FollowUpAction {
 // ──────────────────────────────────────────────────────────────────────────
 
 model WebhookSubscription {
-  id          String   @id @default(cuid())
-  url         String
-  eventTypes  String[]
-  secret      String // HMAC-signs the delivered payload (X-Maatram-Signature)
-  isActive    Boolean  @default(true)
+  id         String   @id @default(cuid())
+  url        String
+  eventTypes String[]
+  secret     String // HMAC-signs the delivered payload (X-Maatram-Signature)
+  isActive   Boolean  @default(true)
 
-  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdBy   User   @relation(fields: [createdById], references: [id])
   createdById String
 
-  deliveries  WebhookDelivery[]
-  createdAt   DateTime @default(now())
+  deliveries WebhookDelivery[]
+  createdAt  DateTime          @default(now())
 }
 
 // One row per (subscription, event) delivery attempt. The unique
@@ -740,15 +1099,15 @@ model WebhookSubscription {
 // never re-POSTs to a subscriber that already got this event, the same
 // way Notification's (sourceEventId, recipientId) constraint works.
 model WebhookDelivery {
-  id             String   @id @default(cuid())
-  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  subscriptionId String
-  eventId        String
-  eventType      String
-  statusCode     Int?
-  success        Boolean  @default(false)
+  id              String              @id @default(cuid())
+  subscription    WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscriptionId  String
+  eventId         String
+  eventType       String
+  statusCode      Int?
+  success         Boolean             @default(false)
   responseSnippet String?
-  attemptedAt    DateTime @default(now())
+  attemptedAt     DateTime            @default(now())
 
   @@unique([subscriptionId, eventId])
   @@index([subscriptionId])

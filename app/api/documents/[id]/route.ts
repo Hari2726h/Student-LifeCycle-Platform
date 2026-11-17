@@ -10,13 +10,27 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const doc = await prisma.document.findUnique({
     where: { id },
-    include: { applicant: true },
+    include: {
+      applicant: {
+        include: {
+          volunteerActivities: {
+            where: {
+              type: { in: ["PHYSICAL_VERIFICATION", "CALL_VERIFICATION"] },
+              assignments: { some: { volunteerId: session.user.id } },
+            },
+            select: { id: true },
+          },
+        },
+      },
+    },
   });
   if (!doc) return new NextResponse("Not found", { status: 404 });
 
   const role = session.user.role;
   const isOwner = doc.applicant?.userId === session.user.id;
-  const isAssignedVolunteer = role === "VOLUNTEER" && doc.applicant?.volunteerId === session.user.id;
+  const isAssignedVolunteer = role === "VOLUNTEER" && (
+    doc.applicant?.volunteerId === session.user.id || (doc.applicant?.volunteerActivities.length ?? 0) > 0
+  );
   const allowed = role === "STAFF" || role === "COMMITTEE" || isAssignedVolunteer || isOwner;
   if (!allowed) return new NextResponse("Forbidden", { status: 403 });
 

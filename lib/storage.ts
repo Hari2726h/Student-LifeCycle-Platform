@@ -137,6 +137,23 @@ export async function putObjectDirect(applicantId: string, file: File) {
   };
 }
 
+/** Santa programme evidence can include short event videos. Keep that extra
+ * MIME allowance scoped to activity evidence; normal document uploads still
+ * accept images and PDFs only. */
+export async function putActivityMediaDirect(activityId: string, file: File) {
+  const mimeType = file.type || "application/octet-stream";
+  if (file.size <= 0 || file.size > MAX_SIZE_BYTES) throw new UploadValidationError("File must be under 8MB");
+  if (!/^image\//.test(mimeType) && !/^video\/(mp4|webm|quicktime)$/.test(mimeType) && mimeType !== "application/pdf") {
+    throw new UploadValidationError("Only images, short videos and PDFs are allowed");
+  }
+
+  await ensureBucket();
+  const storageKey = buildKey(activityId, file.name);
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: storageKey, Body: buffer, ContentType: mimeType }));
+  return { storageKey, fileName: file.name, mimeType, sizeBytes: buffer.byteLength };
+}
+
 /** Short-lived — the download route redirects here after its own
  * role/ownership checks, so the link can't be reused or shared usefully. */
 export async function createPresignedDownloadUrl(storageKey: string, fileName: string) {

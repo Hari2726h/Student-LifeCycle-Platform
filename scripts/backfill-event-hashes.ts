@@ -5,11 +5,23 @@
  * after the migration that adds the (nullable) columns and before the
  * migration that makes them NOT NULL. Safe to re-run — idempotent, since
  * it always recomputes from current row content. */
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { computeEventHash, GENESIS_HASH } from "../lib/event-integrity";
 
 async function main() {
-  const events = await prisma.event.findMany({ orderBy: { sequence: "asc" } });
+  // Read through raw SQL because the Prisma model already declares these
+  // columns non-nullable, while the migration deliberately adds them as
+  // nullable so this backfill can populate existing rows first.
+  const events = await prisma.$queryRaw<Array<{
+    id: string;
+    aggregateType: string;
+    aggregateId: string;
+    type: string;
+    payload: Prisma.JsonValue;
+    occurredAt: Date;
+  }>>`SELECT "id", "aggregateType", "aggregateId", "type", "payload", "occurredAt"
+       FROM "Event" ORDER BY "sequence" ASC`;
   let prevHash = GENESIS_HASH;
   let updated = 0;
 
@@ -21,7 +33,7 @@ async function main() {
       payload: event.payload,
       occurredAt: event.occurredAt,
     });
-    await prisma.event.update({ where: { id: event.id }, data: { hash, prevHash } });
+    await prisma.$executeRaw`UPDATE "Event" SET "hash" = ${hash}, "prevHash" = ${prevHash} WHERE "id" = ${event.id}`;
     prevHash = hash;
     updated++;
   }

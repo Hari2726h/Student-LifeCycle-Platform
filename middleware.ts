@@ -4,7 +4,7 @@ import type { Role } from "@prisma/client";
 
 const ROLE_HOME: Record<Role, string> = {
   APPLICANT: "/applicant",
-  VOLUNTEER: "/staff",
+  VOLUNTEER: "/volunteer",
   COMMITTEE: "/staff",
   MENTOR: "/mentor",
   STUDENT: "/portal",
@@ -17,6 +17,7 @@ const PROTECTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/portal", roles: ["STUDENT", "ALUMNI"] },
   { prefix: "/mentor", roles: ["MENTOR"] },
   { prefix: "/staff", roles: ["STAFF", "COMMITTEE", "VOLUNTEER"] },
+  { prefix: "/volunteer", roles: ["VOLUNTEER"] },
   { prefix: "/apply/assist", roles: ["VOLUNTEER"] },
 ];
 
@@ -41,5 +42,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/applicant/:path*", "/portal/:path*", "/mentor/:path*", "/staff/:path*", "/apply/assist/:path*"],
+  matcher: ["/applicant/:path*", "/portal/:path*", "/mentor/:path*", "/staff/:path*", "/volunteer/:path*", "/apply/assist/:path*"],
 };
