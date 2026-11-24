@@ -13,8 +13,16 @@ export default async function CareerGraphPage() {
   const session = await requireRole(["STAFF"]);
   const nav = await getStaffNav("STAFF", session.user.id);
 
+  // Without an explicit order, Postgres is free to return these rows in a
+  // different sequence on each query — harmless on its own, but this same
+  // Server Component can genuinely run twice for one page view (an RSC
+  // prefetch, then the real render), and buildCareerGraph lays nodes out
+  // in whatever order they arrive. Two different orders is two different
+  // (x, y) layouts for the same people, which React's hydration check
+  // then (correctly) flags as a mismatch. `id` is arbitrary but stable.
   const alumni = await prisma.alumniProfile.findMany({
     include: { student: { include: { user: true } } },
+    orderBy: { id: "asc" },
   });
 
   const nodes = alumni.map((a) => ({
