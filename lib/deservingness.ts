@@ -90,3 +90,17 @@ export function computeDeservingness(input: ScoreInput): DeservingnessResult {
 
   return { score, tier, reasons };
 }
+
+// Shared display mapping — anywhere a tier is shown (the applicant's own
+// record, the committee's interview queue) should read the same way.
+export const DESERVINGNESS_TIER_TONE = {
+  HIGH_PRIORITY: "success",
+  STANDARD: "neutral",
+  REVIEW_RECOMMENDED: "warning",
+} as const;
+
+export const DESERVINGNESS_TIER_LABEL = {
+  HIGH_PRIORITY: "High priority",
+  STANDARD: "Standard",
+  REVIEW_RECOMMENDED: "Review recommended",
+} as const;

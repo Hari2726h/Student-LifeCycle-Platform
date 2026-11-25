@@ -6,6 +6,7 @@ import { DISTRICTS } from "@/lib/constants";
 import { getStaffNav } from "@/lib/staff-nav";
 import { getAtRiskStudents } from "@/lib/retention";
 import { fuzzySearchApplicantsByName } from "@/lib/fuzzy-search";
+import { computeDeservingness, DESERVINGNESS_TIER_TONE, DESERVINGNESS_TIER_LABEL } from "@/lib/deservingness";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, Badge } from "@/components/ui/badge";
@@ -57,14 +58,33 @@ export default async function StaffHome({
         })
       : [];
 
-  const interviewQueue =
+  // Deservingness (lib/deservingness.ts) is admission-time only and never
+  // runs again once someone is enrolled — exactly the data this queue
+  // needs, since it only ever holds applicants still waiting on a
+  // SHORTLISTED/WAITLISTED/REJECTED call. Sorted highest-priority first so
+  // the committee works through whoever needs the seat most without having
+  // to open every applicant one by one to find out.
+  const interviewQueueRaw =
     role === "COMMITTEE"
       ? await prisma.applicant.findMany({
           where: { status: { in: ["INTERVIEW_SCHEDULED", "INTERVIEWED"] } },
-          include: { interview: { include: { scores: true } } },
+          include: { interview: { include: { scores: true } }, sensitiveInfo: true },
           orderBy: { createdAt: "asc" },
         })
       : [];
+  const interviewQueue = interviewQueueRaw
+    .map((a) => ({
+      ...a,
+      deservingness: computeDeservingness({
+        boardPercentage: a.boardPercentage,
+        gender: a.gender,
+        familySituation: a.sensitiveInfo?.familySituation ?? null,
+        annualIncomeInr: a.sensitiveInfo?.annualIncomeInr ?? null,
+        householdSize: a.sensitiveInfo?.householdSize ?? null,
+        interviewScores: a.interview?.scores ?? [],
+      }),
+    }))
+    .sort((a, b) => b.deservingness.score - a.deservingness.score);
 
   const colleges = role === "STAFF" ? await prisma.college.findMany({ orderBy: { name: "asc" } }) : [];
 
@@ -159,11 +179,15 @@ export default async function StaffHome({
       {role === "COMMITTEE" && (
         <section className="mt-8">
           <Card>
-            <CardHeader eyebrow="My queue" title="Interview queue" />
+            <CardHeader
+              eyebrow="My queue"
+              title="Interview queue"
+              description="Sorted highest-priority first — admission-time deservingness, not the panel score alone."
+            />
             <PipelineTable
               rows={interviewQueue}
               empty="No applicants awaiting interview decisions."
-              columns={["Name", "District", "Score (avg)", "Status"]}
+              columns={["Name", "District", "Priority", "Score (avg)", "Status"]}
               render={(a) => {
                 const scores = a.interview?.scores ?? [];
                 const avg = scores.length
@@ -172,7 +196,15 @@ export default async function StaffHome({
                       (scores.length * 4)
                     ).toFixed(1)
                   : "–";
-                return [a.fullName, a.district, <span key="v" className="font-mono tabular-nums">{avg}</span>, <StatusBadge key="s" value={a.status} />];
+                return [
+                  a.fullName,
+                  a.district,
+                  <Badge key="p" tone={DESERVINGNESS_TIER_TONE[a.deservingness.tier]}>
+                    {DESERVINGNESS_TIER_LABEL[a.deservingness.tier]} · {a.deservingness.score}
+                  </Badge>,
+                  <span key="v" className="font-mono tabular-nums">{avg}</span>,
+                  <StatusBadge key="s" value={a.status} />,
+                ];
               }}
               hrefFor={(a) => `/staff/applicants/${a.id}`}
             />

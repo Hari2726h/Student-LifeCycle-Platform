@@ -8,7 +8,7 @@ import type { Event } from "@prisma/client";
 import { findPossibleDuplicates } from "@/lib/applicants";
 import { getOpenSlots } from "@/lib/interview-slots";
 import { suggestMentors } from "@/lib/mentor-matching";
-import { computeDeservingness } from "@/lib/deservingness";
+import { computeDeservingness, DESERVINGNESS_TIER_TONE, DESERVINGNESS_TIER_LABEL } from "@/lib/deservingness";
 import { getStaffNav } from "@/lib/staff-nav";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -686,18 +686,6 @@ function HistorySection({ events }: { events: Event[] }) {
   );
 }
 
-const TIER_TONE = {
-  HIGH_PRIORITY: "success",
-  STANDARD: "neutral",
-  REVIEW_RECOMMENDED: "warning",
-} as const;
-
-const TIER_LABEL = {
-  HIGH_PRIORITY: "High priority",
-  STANDARD: "Standard",
-  REVIEW_RECOMMENDED: "Review recommended",
-} as const;
-
 /** Admission-time only — this never runs again once a student is
  * enrolled, and it never recommends rejection. It's one input into the
  * committee's decision, not a replacement for it. */
@@ -708,7 +696,7 @@ function DeservingnessCard({ result }: { result: ReturnType<typeof computeDeserv
         eyebrow="Admission-time · advisory only"
         title="Deservingness assessment"
         description="Rule-based and fully explainable — scored from the application data above, never from anything that happens after enrollment."
-        action={<Badge tone={TIER_TONE[result.tier]}>{TIER_LABEL[result.tier]}</Badge>}
+        action={<Badge tone={DESERVINGNESS_TIER_TONE[result.tier]}>{DESERVINGNESS_TIER_LABEL[result.tier]}</Badge>}
       />
       <CardBody>
         <p className="font-mono text-2xl font-medium tabular-nums text-ink">{result.score}<span className="text-sm text-ink-faint">/100</span></p>
