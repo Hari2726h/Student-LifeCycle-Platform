@@ -1,18 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { ROLE_HOME } from "@/lib/roles";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
-
-const ROLE_HOME: Record<string, string> = {
-  APPLICANT: "/applicant",
-  VOLUNTEER: "/volunteer",
-  COMMITTEE: "/staff",
-  MENTOR: "/mentor",
-  STUDENT: "/portal",
-  ALUMNI: "/portal",
-  STAFF: "/staff",
-};
 
 const STAGES = [
   "Application",

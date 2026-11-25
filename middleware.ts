@@ -1,16 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { Role } from "@prisma/client";
-
-const ROLE_HOME: Record<Role, string> = {
-  APPLICANT: "/applicant",
-  VOLUNTEER: "/volunteer",
-  COMMITTEE: "/staff",
-  MENTOR: "/mentor",
-  STUDENT: "/portal",
-  ALUMNI: "/portal",
-  STAFF: "/staff",
-};
+import { ROLE_HOME } from "@/lib/roles";
 
 const PROTECTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/applicant", roles: ["APPLICANT"] },

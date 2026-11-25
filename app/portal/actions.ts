@@ -7,6 +7,28 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { addCareerEvent } from "@/lib/alumni-career";
 import { setAlumniMentoringOptIn, setAlumniReferralFlag } from "@/lib/alumni-mentoring";
+import { ROLE_HOME } from "@/lib/roles";
+
+/** A STUDENT hitting one of the ALUMNI-only actions below used to redirect
+ * to /login — a dead end, since STUDENT (like APPLICANT, whom it's
+ * usually promoted from) never gets a passwordHash set. Currently
+ * unreachable in practice (app/portal/page.tsx only renders these forms
+ * when role === "ALUMNI"), but these are real server actions a crafted
+ * request could still hit directly, so they get the same fix as every
+ * other requireX() helper in this audit. */
+async function requireAlumni() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "ALUMNI") redirect(ROLE_HOME[session.user.role]);
+  return session;
+}
+
+async function requireStudentOrAlumni() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "STUDENT" && session.user.role !== "ALUMNI") redirect(ROLE_HOME[session.user.role]);
+  return session;
+}
 
 const schema = z.object({
   company: z.string().min(2),
@@ -53,8 +75,7 @@ export async function selfReportCareerEvent(formData: FormData) {
 }
 
 export async function toggleMentoringOptIn(formData: FormData) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ALUMNI") redirect("/login");
+  const session = await requireAlumni();
 
   const student = await prisma.student.findUniqueOrThrow({ where: { userId: session.user.id } });
   const optIn = formData.get("optIn") === "true";
@@ -65,8 +86,7 @@ export async function toggleMentoringOptIn(formData: FormData) {
 }
 
 export async function toggleReferralFlag(formData: FormData) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ALUMNI") redirect("/login");
+  const session = await requireAlumni();
 
   const student = await prisma.student.findUniqueOrThrow({ where: { userId: session.user.id } });
   const openToReferrals = formData.get("openToReferrals") === "true";
@@ -81,8 +101,7 @@ export async function toggleReferralFlag(formData: FormData) {
  * session an alumnus has ever actually logged through the app came from
  * seed data only, until now. */
 export async function logKarpomSession(formData: FormData) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ALUMNI") redirect("/login");
+  const session = await requireAlumni();
 
   const parsed = karpomSchema.safeParse({
     juniorName: formData.get("juniorName"),

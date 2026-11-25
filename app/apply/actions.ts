@@ -12,15 +12,22 @@ import { appendEvent } from "@/lib/events";
 import { notifyApplicant } from "@/lib/notifications";
 import { getOpenCycle, isCycleOpen } from "@/lib/cycles";
 import { LANG_COOKIE, type Lang } from "@/lib/i18n";
+import { ROLE_HOME } from "@/lib/roles";
 import { Role, type DocumentKind } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { hashAadhaar } from "@/lib/aadhaar";
 
+/** app/apply/page.tsx redirects a promoted (no-longer-APPLICANT) user to
+ * their actual home instead of /login — fixed because applicants never
+ * get a passwordHash set, so /login is a dead end for them. This helper
+ * is the same check reached directly by every wizard-step server action
+ * (not just the initial page load), so it needs the identical fix: a
+ * stale tab, or a promoted user re-submitting a cached form, hits this
+ * before ever re-rendering the page. */
 async function requireApplicant() {
   const session = await auth();
-  if (!session?.user || session.user.role !== "APPLICANT") {
-    redirect("/login");
-  }
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "APPLICANT") redirect(ROLE_HOME[session.user.role]);
   return session.user;
 }
 

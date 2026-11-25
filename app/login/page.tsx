@@ -1,4 +1,8 @@
-import { AlertCircle } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { AlertCircle, ArrowRight } from "lucide-react";
+import { auth } from "@/auth";
+import { ROLE_HOME } from "@/lib/roles";
 import { BrandMark } from "@/components/brand-mark";
 import { Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,6 +24,15 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string; callbackUrl?: string }>;
 }) {
   const params = await searchParams;
+
+  // middleware.ts never sends an authenticated user here — it only ever
+  // bounces a role mismatch to ROLE_HOME, never to /login — so the only
+  // way to land here already signed in is navigating here directly (a
+  // bookmark, the homepage's "Sign in" button, browser back). Without
+  // this, that showed a confusing fresh login form instead of just
+  // continuing to the dashboard the user is already in.
+  const session = await auth();
+  if (session?.user) redirect(ROLE_HOME[session.user.role]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg px-4 py-12">
@@ -53,6 +66,16 @@ export default async function LoginPage({
             Sign in
           </Button>
         </form>
+
+        <Link
+          href="/apply"
+          className="mt-4 flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-3.5 py-3 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-surface-sunken"
+        >
+          <span>
+            Applying for sponsorship? <span className="text-ink-muted">Sign in with your mobile number instead.</span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-ink-faint" aria-hidden />
+        </Link>
 
         <div className="mt-8 rounded-md border border-border bg-surface px-3.5 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-faint">

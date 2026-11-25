@@ -8,16 +8,23 @@ import { auth } from "@/auth";
 import { appendEvent, isRealStatusChange } from "@/lib/events";
 import { notifyApplicant } from "@/lib/notifications";
 
-async function requireRole(roles: string[]) {
+/** /staff is reachable by STAFF, COMMITTEE and VOLUNTEER alike, but
+ * individual actions here are narrower (STAFF-only or COMMITTEE-only) —
+ * so unlike a true auth failure, a role mismatch here is a legitimate
+ * user looking at a page they can view but not act on. Redirect back to
+ * the applicant they were looking at with an error, same as every other
+ * validation failure in this file, instead of booting them to /login. */
+async function requireRole(roles: string[], applicantId: string) {
   const session = await auth();
-  if (!session?.user || !roles.includes(session.user.role)) {
-    redirect("/login");
+  if (!session?.user) redirect("/login");
+  if (!roles.includes(session.user.role)) {
+    redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent("You don't have permission to do that")}`);
   }
   return session.user;
 }
 
 export async function addApplicantRemark(applicantId: string, formData: FormData) {
-  const staff = await requireRole(["STAFF"]);
+  const staff = await requireRole(["STAFF"], applicantId);
   const parsed = z.object({
     note: z.string().trim().min(3).max(3000),
     idempotencyKey: z.string().uuid(),
@@ -54,7 +61,7 @@ const FINAL_APPLICANT_STATUSES = ["ACCEPTED", "REJECTED", "WAITLISTED", "WITHDRA
  * makes the second transaction wait for the first to commit, then see the
  * updated count. */
 export async function scheduleInterview(applicantId: string, formData: FormData) {
-  const user = await requireRole(["COMMITTEE"]);
+  const user = await requireRole(["COMMITTEE"], applicantId);
 
   const slotId = formData.get("slotId");
   if (typeof slotId !== "string" || !slotId) {
@@ -117,7 +124,7 @@ const scoreSchema = z.object({
 });
 
 export async function submitScore(applicantId: string, formData: FormData) {
-  const user = await requireRole(["COMMITTEE"]);
+  const user = await requireRole(["COMMITTEE"], applicantId);
 
   const interview = await prisma.interviewRecord.findUnique({ where: { applicantId } });
   if (!interview) {
@@ -169,7 +176,7 @@ export async function submitScore(applicantId: string, formData: FormData) {
 }
 
 export async function recordDecision(applicantId: string, formData: FormData) {
-  const user = await requireRole(["COMMITTEE"]);
+  const user = await requireRole(["COMMITTEE"], applicantId);
 
   const decision = formData.get("decision");
   if (decision !== "SHORTLISTED" && decision !== "REJECTED" && decision !== "WAITLISTED") {
@@ -241,7 +248,7 @@ const offlineMeetingSchema = z.object({
 });
 
 export async function scheduleOfflineMeeting(applicantId: string, formData: FormData) {
-  const staff = await requireRole(["STAFF"]);
+  const staff = await requireRole(["STAFF"], applicantId);
   const parsed = offlineMeetingSchema.safeParse({
     scheduledAt: formData.get("scheduledAt"),
     location: formData.get("location"),
@@ -276,7 +283,7 @@ const offlineDecisionSchema = z.object({
 });
 
 export async function recordOfflineMeetingDecision(applicantId: string, formData: FormData) {
-  const staff = await requireRole(["STAFF"]);
+  const staff = await requireRole(["STAFF"], applicantId);
   const parsed = offlineDecisionSchema.safeParse({
     decision: formData.get("decision"),
     reason: formData.get("reason") ?? "",
@@ -340,7 +347,7 @@ const onboardSchema = z.object({
  * college/program mapping, a sponsorship coverage checklist, and a mentor
  * — picked by staff from the ranked suggestion list, never auto-assigned. */
 export async function onboardStudent(applicantId: string, formData: FormData) {
-  const staffUser = await requireRole(["STAFF"]);
+  const staffUser = await requireRole(["STAFF"], applicantId);
 
   const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
   if (applicant.status !== "ACCEPTED") {

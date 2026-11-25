@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getWizardState, clampStep } from "@/lib/wizard";
+import { ROLE_HOME } from "@/lib/roles";
 import { LANG_COOKIE, t, type Lang } from "@/lib/i18n";
 import { LanguageToggle } from "./language-toggle";
 import { StatusBadge } from "@/components/ui/badge";
@@ -52,7 +53,14 @@ export default async function ApplyPage({
   }
 
   if (session.user.role !== "APPLICANT") {
-    redirect("/login");
+    // Applicants sign in by phone + OTP against whatever User row that
+    // phone belongs to — auth.ts's phone-otp provider has no role check.
+    // Once an applicant is onboarded as a Student (same User row, role
+    // flipped — see onboardStudent), re-entering that same phone number
+    // here still authenticates fine; this used to send them to /login,
+    // where email+password sign-in fails for them since applicants never
+    // get a password set. Send them where their actual role lives instead.
+    redirect(ROLE_HOME[session.user.role]);
   }
 
   const { applicant, maxStep, alreadySubmitted } = await getWizardState(session.user.id);
