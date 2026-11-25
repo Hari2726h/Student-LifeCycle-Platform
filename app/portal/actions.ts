@@ -44,11 +44,16 @@ const karpomSchema = z.object({
   notes: z.string().trim().max(1000).optional(),
 });
 
+const profileSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  phone: z.string().trim().regex(/^\+?[0-9\s()-]{7,20}$/).or(z.literal("")),
+  bio: z.string().trim().max(1000).optional(),
+});
+
 /** An alumnus reporting their own career update — source is always
  * SELF_REPORTED here; REFERRAL and PLACEMENT only ever come from staff. */
 export async function selfReportCareerEvent(formData: FormData) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ALUMNI") redirect("/login");
+  const session = await requireAlumni();
 
   const parsed = schema.safeParse({
     company: formData.get("company"),
@@ -130,4 +135,41 @@ export async function logKarpomSession(formData: FormData) {
   });
 
   revalidatePath("/portal");
+}
+
+/** Students and alumni had no way to self-edit anything about their own
+ * account — name, phone, bio were all read-only, unlike every other role
+ * (volunteers have updateVolunteerProfile). bio only applies to alumni;
+ * students just get name/phone. */
+export async function updateProfile(formData: FormData) {
+  const session = await requireStudentOrAlumni();
+
+  const parsed = profileSchema.safeParse({
+    name: formData.get("name"),
+    phone: formData.get("phone") ?? "",
+    bio: formData.get("bio") || undefined,
+  });
+  if (!parsed.success) redirect("/portal/profile?error=Check+the+profile+fields");
+  const data = parsed.data;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: session.user.id },
+        data: { name: data.name, phone: data.phone || null },
+      });
+      if (session.user.role === "ALUMNI") {
+        const student = await tx.student.findUnique({ where: { userId: session.user.id }, include: { alumniProfile: true } });
+        if (student?.alumniProfile) {
+          await tx.alumniProfile.update({ where: { id: student.alumniProfile.id }, data: { bio: data.bio || null } });
+        }
+      }
+    });
+  } catch {
+    redirect("/portal/profile?error=That+mobile+number+may+already+be+in+use");
+  }
+
+  revalidatePath("/portal");
+  revalidatePath("/portal/profile");
+  redirect("/portal/profile?saved=1");
 }

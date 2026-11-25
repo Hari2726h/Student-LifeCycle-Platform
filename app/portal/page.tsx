@@ -1,6 +1,7 @@
 import { GraduationCap, Heart, Check, Briefcase } from "lucide-react";
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
+import { getPortalNav } from "@/lib/portal-nav";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, Badge } from "@/components/ui/badge";
@@ -42,7 +43,7 @@ export default async function PortalHome() {
     <AppShell
       role={session.user.role}
       name={session.user.name ?? "Student"}
-      nav={[{ label: "Overview", href: "/portal", icon: <GraduationCap /> }]}
+      nav={getPortalNav()}
     >
       <PageHeader
         eyebrow={session.user.role === "ALUMNI" ? "Alumni" : "Student"}
