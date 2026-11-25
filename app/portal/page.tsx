@@ -113,53 +113,11 @@ export default async function PortalHome() {
                 </div>
               )}
             </Card>
-          </div>
 
-          <div className="space-y-5">
-            {student.sponsorship && (
-              <Card>
-                <CardHeader eyebrow="Coverage" title="Sponsorship" />
-                <CardBody>
-                  <ul className="space-y-2 text-sm">
-                    {[
-                      ["Tuition", student.sponsorship.tuitionCovered],
-                      ["Hostel", student.sponsorship.hostelCovered],
-                      ["Food", student.sponsorship.foodCovered],
-                      ["Transport", student.sponsorship.transportCovered],
-                      ["Materials", student.sponsorship.materialsCovered],
-                    ].map(([label, covered]) => (
-                      <li key={label as string} className="flex items-center gap-2 text-ink">
-                        <span
-                          className={`flex size-4 items-center justify-center rounded-full ${
-                            covered ? "bg-success-soft text-success" : "bg-surface-sunken text-ink-faint"
-                          }`}
-                        >
-                          {covered && <Check className="size-2.5" strokeWidth={3} aria-hidden />}
-                        </span>
-                        {label as string}
-                      </li>
-                    ))}
-                  </ul>
-                </CardBody>
-              </Card>
-            )}
-
-            {student.placement && (
-              <Card>
-                <CardHeader eyebrow="Outcome" title="Placement" />
-                <CardBody>
-                  <p className="text-sm text-ink">
-                    {student.placement.role} at <span className="font-medium">{student.placement.company}</span>
-                  </p>
-                  {student.placement.packageInrLakhs && (
-                    <p className="mt-0.5 font-mono text-sm tabular-nums text-ink-muted">
-                      ₹{student.placement.packageInrLakhs}L
-                    </p>
-                  )}
-                </CardBody>
-              </Card>
-            )}
-
+            {/* Career history and Karpom sessions are open-ended lists that
+            grow over time — they live in the wide column so the page
+            doesn't end up with a short, fixed-size rail next to a tall one
+            once an alumnus has built up a few years of either. */}
             {student.alumniProfile && (
               <Card>
                 <CardHeader
@@ -205,6 +163,86 @@ export default async function PortalHome() {
 
             {student.alumniProfile && (
               <Card className="border-gold/30 bg-gold-soft/40">
+                <CardHeader eyebrow="Giving back" title="Karpom Karpippom" />
+                <CardBody className="space-y-4">
+                  <form action={logKarpomSession} className="grid grid-cols-1 gap-2 border-b border-border pb-4 sm:grid-cols-2">
+                    <Field label="Junior's name" name="juniorName" required />
+                    <Field label="Junior's contact (optional)" name="juniorContact" />
+                    <Field label="Subject" name="subject" required />
+                    <Field label="Session date" type="date" name="sessionDate" required />
+                    <TextArea label="Notes (optional)" name="notes" rows={2} className="sm:col-span-2" />
+                    <Button type="submit" variant="secondary" size="sm" className="sm:col-span-2">
+                      Log session
+                    </Button>
+                  </form>
+
+                  {student.alumniProfile.karpomSessions.length === 0 ? (
+                    <p className="text-sm text-ink-faint">No tutoring sessions logged yet.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {student.alumniProfile.karpomSessions.map((s) => (
+                        <li key={s.id} className="text-sm text-ink">
+                          <span className="font-medium">{s.subject}</span>
+                          <span className="text-ink-faint"> — {s.juniorName}</span>
+                          <span className="block font-mono text-xs text-ink-faint">
+                            {s.sessionDate.toLocaleDateString()}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardBody>
+              </Card>
+            )}
+          </div>
+
+          <div className="space-y-5">
+            {student.sponsorship && (
+              <Card>
+                <CardHeader eyebrow="Coverage" title="Sponsorship" />
+                <CardBody>
+                  <ul className="space-y-2 text-sm">
+                    {[
+                      ["Tuition", student.sponsorship.tuitionCovered],
+                      ["Hostel", student.sponsorship.hostelCovered],
+                      ["Food", student.sponsorship.foodCovered],
+                      ["Transport", student.sponsorship.transportCovered],
+                      ["Materials", student.sponsorship.materialsCovered],
+                    ].map(([label, covered]) => (
+                      <li key={label as string} className="flex items-center gap-2 text-ink">
+                        <span
+                          className={`flex size-4 items-center justify-center rounded-full ${
+                            covered ? "bg-success-soft text-success" : "bg-surface-sunken text-ink-faint"
+                          }`}
+                        >
+                          {covered && <Check className="size-2.5" strokeWidth={3} aria-hidden />}
+                        </span>
+                        {label as string}
+                      </li>
+                    ))}
+                  </ul>
+                </CardBody>
+              </Card>
+            )}
+
+            {student.placement && (
+              <Card>
+                <CardHeader eyebrow="Outcome" title="Placement" />
+                <CardBody>
+                  <p className="text-sm text-ink">
+                    {student.placement.role} at <span className="font-medium">{student.placement.company}</span>
+                  </p>
+                  {student.placement.packageInrLakhs != null && (
+                    <p className="mt-0.5 font-mono text-sm tabular-nums text-ink-muted">
+                      ₹{student.placement.packageInrLakhs}L
+                    </p>
+                  )}
+                </CardBody>
+              </Card>
+            )}
+
+            {student.alumniProfile && (
+              <Card className="border-gold/30 bg-gold-soft/40">
                 <CardHeader
                   eyebrow="Giving back"
                   title="Mentor a current student"
@@ -243,40 +281,6 @@ export default async function PortalHome() {
                       </Button>
                     </label>
                   </form>
-                </CardBody>
-              </Card>
-            )}
-
-            {student.alumniProfile && (
-              <Card className="border-gold/30 bg-gold-soft/40">
-                <CardHeader eyebrow="Giving back" title="Karpom Karpippom" />
-                <CardBody className="space-y-4">
-                  <form action={logKarpomSession} className="grid grid-cols-1 gap-2 border-b border-border pb-4 sm:grid-cols-2">
-                    <Field label="Junior's name" name="juniorName" required />
-                    <Field label="Junior's contact (optional)" name="juniorContact" />
-                    <Field label="Subject" name="subject" required />
-                    <Field label="Session date" type="date" name="sessionDate" required />
-                    <TextArea label="Notes (optional)" name="notes" rows={2} className="sm:col-span-2" />
-                    <Button type="submit" variant="secondary" size="sm" className="sm:col-span-2">
-                      Log session
-                    </Button>
-                  </form>
-
-                  {student.alumniProfile.karpomSessions.length === 0 ? (
-                    <p className="text-sm text-ink-faint">No tutoring sessions logged yet.</p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {student.alumniProfile.karpomSessions.map((s) => (
-                        <li key={s.id} className="text-sm text-ink">
-                          <span className="font-medium">{s.subject}</span>
-                          <span className="text-ink-faint"> — {s.juniorName}</span>
-                          <span className="block font-mono text-xs text-ink-faint">
-                            {s.sessionDate.toLocaleDateString()}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </CardBody>
               </Card>
             )}
