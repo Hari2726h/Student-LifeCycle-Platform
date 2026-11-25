@@ -14,10 +14,11 @@ import { createInterviewSlot } from "./actions";
 export default async function InterviewSlotsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; errorField?: string }>;
 }) {
   const session = await requireRole(["COMMITTEE"]);
-  const { error } = await searchParams;
+  const { error, errorField } = await searchParams;
+  const fieldError = (name: string) => (errorField === name ? error : undefined);
 
   const slots = await getUpcomingSlots();
   const nav = await getStaffNav("COMMITTEE", session.user.id);
@@ -30,7 +31,7 @@ export default async function InterviewSlotsPage({
         description="Declare when the panel is available. Applicants get scheduled into these slots rather than an arbitrary time."
       />
 
-      {error && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
+      {error && !errorField && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -66,10 +67,10 @@ export default async function InterviewSlotsPage({
           <CardHeader eyebrow="New" title="Declare a slot" />
           <CardBody>
             <form action={createInterviewSlot} className="space-y-4">
-              <Field label="Date & time" type="datetime-local" name="scheduledAt" required />
-              <Field label="Location" name="location" required defaultValue="Maatram Foundation Centre, Chennai" />
-              <Field label="Online meeting link" type="url" name="meetingUrl" placeholder="https://…" />
-              <Field label="Capacity (applicants)" type="number" name="capacity" min={1} max={20} required defaultValue={3} />
+              <Field label="Date & time" type="datetime-local" name="scheduledAt" required error={fieldError("scheduledAt")} />
+              <Field label="Location" name="location" required defaultValue="Maatram Foundation Centre, Chennai" error={fieldError("location")} />
+              <Field label="Online meeting link" type="url" name="meetingUrl" placeholder="https://…" error={fieldError("meetingUrl")} />
+              <Field label="Capacity (applicants)" type="number" name="capacity" min={1} max={20} required defaultValue={3} error={fieldError("capacity")} />
               <Button type="submit" variant="primary" className="w-full">
                 Add slot
               </Button>

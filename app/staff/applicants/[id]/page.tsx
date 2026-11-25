@@ -10,6 +10,7 @@ import { getOpenSlots } from "@/lib/interview-slots";
 import { suggestMentors } from "@/lib/mentor-matching";
 import { computeDeservingness, DESERVINGNESS_TIER_TONE, DESERVINGNESS_TIER_LABEL } from "@/lib/deservingness";
 import { getStaffNav } from "@/lib/staff-nav";
+import { ROLE_HOME } from "@/lib/roles";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { BackLink } from "@/components/ui/back-link";
@@ -39,14 +40,16 @@ export default async function ApplicantDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; errorField?: string }>;
 }) {
   const session = await auth();
-  if (!session?.user || !["STAFF", "COMMITTEE", "VOLUNTEER"].includes(session.user.role)) {
-    redirect("/login");
+  if (!session?.user) redirect("/login");
+  if (!["STAFF", "COMMITTEE", "VOLUNTEER"].includes(session.user.role)) {
+    redirect(ROLE_HOME[session.user.role]);
   }
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, errorField } = await searchParams;
+  const fieldError = (name: string) => (errorField === name ? error : undefined);
   const role = session.user.role;
 
   const applicant = await prisma.applicant.findUnique({
@@ -126,7 +129,7 @@ export default async function ApplicantDetailPage({
         action={<StatusBadge value={applicant.status} />}
       />
 
-      {error && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
+      {error && !errorField && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
 
       {applicant.student && (
         <Card className="mb-5 border-success/30 bg-success-soft/40">
@@ -146,6 +149,7 @@ export default async function ApplicantDetailPage({
           defaultProgram={applicant.courseInterest}
           colleges={onboardColleges}
           suggestions={mentorSuggestions}
+          fieldError={fieldError}
         />
       )}
 
@@ -275,14 +279,15 @@ export default async function ApplicantDetailPage({
               openSlots={openSlots}
               canSchedule={canScheduleInterview}
               status={applicant.status}
+              fieldError={fieldError}
             />
           )}
 
           {role === "STAFF" && (
-            <OfflineMeetingSection applicantId={applicant.id} status={applicant.status} meeting={applicant.offlineMeeting} />
+            <OfflineMeetingSection applicantId={applicant.id} status={applicant.status} meeting={applicant.offlineMeeting} fieldError={fieldError} />
           )}
 
-          {role === "STAFF" && <Card><CardHeader eyebrow="Staff only" title="Internal remark" description="Saved to the append-only applicant history." /><CardBody><form action={addApplicantRemark.bind(null, applicant.id)} className="space-y-3"><input type="hidden" name="idempotencyKey" value={randomUUID()} /><TextArea label="Remark" name="note" rows={3} maxLength={3000} required /><Button type="submit">Save internal remark</Button></form></CardBody></Card>}
+          {role === "STAFF" && <Card><CardHeader eyebrow="Staff only" title="Internal remark" description="Saved to the append-only applicant history." /><CardBody><form action={addApplicantRemark.bind(null, applicant.id)} className="space-y-3"><input type="hidden" name="idempotencyKey" value={randomUUID()} /><TextArea label="Remark" name="note" rows={3} maxLength={3000} required error={fieldError("note")} /><Button type="submit">Save internal remark</Button></form></CardBody></Card>}
 
           {canViewHistory && <TimeTravelSection events={history} applicantId={applicant.id} />}
           {canViewHistory && <HistorySection events={history} />}
@@ -366,6 +371,7 @@ function InterviewSection({
   openSlots,
   canSchedule,
   status,
+  fieldError,
 }: {
   applicantId: string;
   interview: {
@@ -383,6 +389,7 @@ function InterviewSection({
   openSlots: { id: string; scheduledAt: Date; location: string; capacity: number; _count: { interviews: number } }[];
   canSchedule: boolean;
   status: string;
+  fieldError: (name: string) => string | undefined;
 }) {
   if (!interview) {
     if (role !== "COMMITTEE" || !canSchedule) {
@@ -461,10 +468,10 @@ function InterviewSection({
                   {myScore ? "Update your scorecard" : "Your scorecard"}
                 </p>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Academic merit (1-10)" type="number" name="academicMerit" min={1} max={10} required defaultValue={myScore?.academicMerit} />
-                  <Field label="Financial need (1-10)" type="number" name="financialNeed" min={1} max={10} required defaultValue={myScore?.financialNeed} />
-                  <Field label="Communication (1-10)" type="number" name="communication" min={1} max={10} required defaultValue={myScore?.communication} />
-                  <Field label="Intent clarity (1-10)" type="number" name="intentClarity" min={1} max={10} required defaultValue={myScore?.intentClarity} />
+                  <Field label="Academic merit (1-10)" type="number" name="academicMerit" min={1} max={10} required defaultValue={myScore?.academicMerit} error={fieldError("academicMerit")} />
+                  <Field label="Financial need (1-10)" type="number" name="financialNeed" min={1} max={10} required defaultValue={myScore?.financialNeed} error={fieldError("financialNeed")} />
+                  <Field label="Communication (1-10)" type="number" name="communication" min={1} max={10} required defaultValue={myScore?.communication} error={fieldError("communication")} />
+                  <Field label="Intent clarity (1-10)" type="number" name="intentClarity" min={1} max={10} required defaultValue={myScore?.intentClarity} error={fieldError("intentClarity")} />
                 </div>
                 <Button type="submit" variant="secondary" className="w-full">
                   {myScore ? "Update score" : "Submit score"}
@@ -473,7 +480,7 @@ function InterviewSection({
 
               {interview.scores.length > 0 && (
                 <form action={recordDecision.bind(null, applicantId)} className="space-y-3 border-t border-border pt-4">
-                  <Field label="Rejection reason (required if rejecting)" name="reason" maxLength={1500} />
+                  <Field label="Rejection reason (required if rejecting)" name="reason" maxLength={1500} error={fieldError("reason")} />
                   <div className="flex flex-wrap gap-2">
                     <Button type="submit" name="decision" value="SHORTLISTED" variant="primary">Pass to final meeting</Button>
                     <Button type="submit" name="decision" value="WAITLISTED" variant="secondary">Waitlist</Button>
@@ -504,6 +511,7 @@ function OfflineMeetingSection({
   applicantId,
   status,
   meeting,
+  fieldError,
 }: {
   applicantId: string;
   status: string;
@@ -517,6 +525,7 @@ function OfflineMeetingSection({
     decisionReason: string | null;
     coordinator: { name: string } | null;
   } | null;
+  fieldError: (name: string) => string | undefined;
 }) {
   const canSchedule = status === "SHORTLISTED" && (!meeting || ["SCHEDULED", "RESCHEDULED"].includes(meeting.outcome));
   const canDecide = status === "SHORTLISTED" && !!meeting?.scheduledAt && !["SELECTED", "REJECTED"].includes(meeting.outcome);
@@ -539,15 +548,15 @@ function OfflineMeetingSection({
         )}
         {canSchedule && (
           <form action={scheduleOfflineMeeting.bind(null, applicantId)} className="grid gap-3 sm:grid-cols-2">
-            <Field label="Meeting date and time" type="datetime-local" name="scheduledAt" required />
-            <Field label="Location" name="location" required defaultValue={meeting?.location ?? ""} />
+            <Field label="Meeting date and time" type="datetime-local" name="scheduledAt" required error={fieldError("scheduledAt")} />
+            <Field label="Location" name="location" required defaultValue={meeting?.location ?? ""} error={fieldError("location")} />
             <div className="sm:col-span-2"><Button type="submit" variant="secondary">{meeting ? "Update meeting schedule" : "Schedule final meeting"}</Button></div>
           </form>
         )}
         {canDecide && (
           <form action={recordOfflineMeetingDecision.bind(null, applicantId)} className="space-y-3 border-t border-border pt-4">
             <label className="flex items-center gap-2 text-sm text-ink"><input type="checkbox" name="attended" className="size-4 rounded border-border accent-accent" /> Applicant attended</label>
-            <Field label="Decision reason (required for rejection)" name="reason" defaultValue={meeting?.decisionReason ?? ""} maxLength={1500} />
+            <Field label="Decision reason (required for rejection)" name="reason" defaultValue={meeting?.decisionReason ?? ""} maxLength={1500} error={fieldError("reason")} />
             <TextArea label="Core team remarks" name="remarks" rows={3} defaultValue={meeting?.remarks ?? ""} maxLength={3000} />
             <div className="flex flex-wrap gap-2">
               <Button type="submit" name="decision" value="ACCEPTED" variant="primary">Confirm selection</Button>
@@ -566,12 +575,14 @@ function OnboardingSection({
   defaultProgram,
   colleges,
   suggestions,
+  fieldError,
 }: {
   applicantId: string;
   defaultCollegeId: string | null;
   defaultProgram: string | null;
   colleges: { id: string; name: string; district: string }[];
   suggestions: Awaited<ReturnType<typeof suggestMentors>>;
+  fieldError: (name: string) => string | undefined;
 }) {
   return (
     <Card className="mb-5">
@@ -583,16 +594,16 @@ function OnboardingSection({
       <CardBody>
         <form action={onboardStudent.bind(null, applicantId)} className="space-y-5">
           <div className="grid grid-cols-2 gap-4">
-            <Select label="College" name="collegeId" required defaultValue={defaultCollegeId ?? ""} placeholder="Select college">
+            <Select label="College" name="collegeId" required defaultValue={defaultCollegeId ?? ""} placeholder="Select college" error={fieldError("collegeId")}>
               {colleges.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} · {c.district}
                 </option>
               ))}
             </Select>
-            <Field label="Program" name="program" required defaultValue={defaultProgram ?? ""} />
+            <Field label="Program" name="program" required defaultValue={defaultProgram ?? ""} error={fieldError("program")} />
           </div>
-          <Field label="Admission year" type="number" name="admissionYear" min={2000} max={2100} required defaultValue={new Date().getFullYear()} />
+          <Field label="Admission year" type="number" name="admissionYear" min={2000} max={2100} required defaultValue={new Date().getFullYear()} error={fieldError("admissionYear")} />
 
           <div>
             <p className="text-sm font-medium text-ink">Mentor — ranked suggestions</p>

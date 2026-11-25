@@ -13,6 +13,7 @@ import { notifyApplicant } from "@/lib/notifications";
 import { getOpenCycle, isCycleOpen } from "@/lib/cycles";
 import { LANG_COOKIE, type Lang } from "@/lib/i18n";
 import { ROLE_HOME } from "@/lib/roles";
+import { redirectWithFieldError } from "@/lib/form-errors";
 import { Role, type DocumentKind } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { hashAadhaar } from "@/lib/aadhaar";
@@ -51,28 +52,6 @@ async function requireVolunteer() {
 export async function setLanguageAction(lang: Lang) {
   const store = await cookies();
   store.set(LANG_COOKIE, lang, { path: "/", maxAge: 60 * 60 * 24 * 365 });
-}
-
-/** Without errorField, a validation failure on one field in a long,
- * multi-section step (e.g. "Headmaster's contact number" at the bottom of
- * the academic step) rendered as a generic banner at the top of the page —
- * indistinguishable from an error about whatever field happened to be
- * first. Field, Select and TextArea already render an inline error right
- * under the named input when given one; this just wires the redirect up
- * to say which field it's actually about. path[0] is a plain field name
- * for object schemas but an array index for the sibling list, where no
- * single named input exists to highlight — the string check skips that
- * case and falls back to the generic banner, correctly. */
-function redirectWithFieldError(
-  path: string,
-  error: z.ZodError,
-  fallback: string,
-  extraParams?: Record<string, string>,
-): never {
-  const issue = error.issues[0];
-  const params = new URLSearchParams({ ...extraParams, error: issue?.message ?? fallback });
-  if (typeof issue?.path[0] === "string") params.set("errorField", issue.path[0]);
-  redirect(`${path}?${params.toString()}`);
 }
 
 const phoneSchema = z

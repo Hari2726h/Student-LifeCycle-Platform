@@ -15,10 +15,11 @@ import { createCycle } from "./actions";
 export default async function CyclesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; errorField?: string }>;
 }) {
   const session = await requireRole(["STAFF"]);
-  const { error } = await searchParams;
+  const { error, errorField } = await searchParams;
+  const fieldError = (name: string) => (errorField === name ? error : undefined);
   const nav = await getStaffNav("STAFF", session.user.id);
   const stats = await getCycleStats();
   const now = new Date();
@@ -31,7 +32,7 @@ export default async function CyclesPage({
         description="Each year is a separate cycle. New applications can only start while one is open."
       />
 
-      {error && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
+      {error && !errorField && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -104,9 +105,9 @@ export default async function CyclesPage({
           <CardHeader eyebrow="New" title="Open a cycle" />
           <CardBody>
             <form action={createCycle} className="space-y-3">
-              <Field label="Year" type="number" name="year" min={2000} max={2100} required defaultValue={now.getFullYear()} />
-              <Field label="Opens" type="date" name="opensAt" required />
-              <Field label="Closes" type="date" name="closesAt" required />
+              <Field label="Year" type="number" name="year" min={2000} max={2100} required defaultValue={now.getFullYear()} error={fieldError("year")} />
+              <Field label="Opens" type="date" name="opensAt" required error={fieldError("opensAt")} />
+              <Field label="Closes" type="date" name="closesAt" required error={fieldError("closesAt")} />
               <Button type="submit" variant="primary" className="w-full">
                 Create cycle
               </Button>

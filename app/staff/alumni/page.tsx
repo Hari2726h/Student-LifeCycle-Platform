@@ -26,10 +26,11 @@ const SOURCE_LABEL: Record<string, string> = {
 export default async function StaffAlumniPage({
   searchParams,
 }: {
-  searchParams: Promise<{ company?: string; result?: string; error?: string }>;
+  searchParams: Promise<{ company?: string; result?: string; error?: string; errorField?: string }>;
 }) {
   const session = await requireRole(["STAFF"]);
-  const { company, result, error } = await searchParams;
+  const { company, result, error, errorField } = await searchParams;
+  const fieldError = (name: string) => (errorField === name ? error : undefined);
   const nav = await getStaffNav("STAFF", session.user.id);
 
   const [allAlumni, searchResults] = await Promise.all([
@@ -59,7 +60,7 @@ export default async function StaffAlumniPage({
       />
 
       {result && <div className="mb-4 rounded-md border border-success/30 bg-success-soft/50 px-3 py-2 text-sm text-success">{decodeURIComponent(result)}</div>}
-      {error && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
+      {error && !errorField && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
@@ -189,9 +190,9 @@ export default async function StaffAlumniPage({
                   <option value="PLACEMENT">Placement</option>
                   <option value="REFERRAL">Referral</option>
                 </Select>
-                <Field label="Company" name="company" required />
-                <Field label="Role" name="role" required />
-                <Field label="Start date" type="date" name="startDate" required />
+                <Field label="Company" name="company" required error={fieldError("company")} />
+                <Field label="Role" name="role" required error={fieldError("role")} />
+                <Field label="Start date" type="date" name="startDate" required error={fieldError("startDate")} />
                 <TextArea label="Notes (optional)" name="notes" rows={2} />
                 <Button type="submit" variant="primary" className="w-full">
                   Add career event

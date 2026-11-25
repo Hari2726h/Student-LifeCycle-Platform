@@ -5,10 +5,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { addCareerEvent, recomputeAllProfiles } from "@/lib/alumni-career";
+import { ROLE_HOME } from "@/lib/roles";
+import { redirectWithFieldError } from "@/lib/form-errors";
 
 async function requireStaff() {
   const session = await auth();
-  if (!session?.user || session.user.role !== "STAFF") redirect("/login");
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "STAFF") redirect(ROLE_HOME[session.user.role]);
 }
 
 const schema = z.object({
@@ -34,9 +37,7 @@ export async function logStaffCareerEvent(formData: FormData) {
     startDate: formData.get("startDate"),
     notes: formData.get("notes") || undefined,
   });
-  if (!parsed.success) {
-    redirect(`/staff/alumni?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
-  }
+  if (!parsed.success) redirectWithFieldError("/staff/alumni", parsed.error, "Invalid input");
 
   await addCareerEvent(parsed.data);
   revalidatePath("/staff/alumni");

@@ -7,10 +7,13 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { appendEvent, isRealStatusChange } from "@/lib/events";
 import { addCareerEventTx } from "@/lib/alumni-career";
+import { redirectWithFieldError } from "@/lib/form-errors";
+import { ROLE_HOME } from "@/lib/roles";
 
 async function requireStaff() {
   const session = await auth();
-  if (!session?.user || session.user.role !== "STAFF") redirect("/login");
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "STAFF") redirect(ROLE_HOME[session.user.role]);
   return session.user;
 }
 
@@ -89,9 +92,7 @@ export async function promoteToAlumnus(studentId: string, formData: FormData) {
     packageInrLakhs: formData.get("packageInrLakhs") || undefined,
     joiningDate: formData.get("joiningDate") || undefined,
   });
-  if (!parsed.success) {
-    redirect(`/staff/students/${studentId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
-  }
+  if (!parsed.success) redirectWithFieldError(`/staff/students/${studentId}`, parsed.error, "Invalid input");
   const data = parsed.data;
   const hasPlacement = !!(data.company && data.role);
 

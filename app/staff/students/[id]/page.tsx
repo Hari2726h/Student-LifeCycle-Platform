@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getPersonTimeline, describePersonTimelineEvent } from "@/lib/person-timeline";
 import { getStaffNav } from "@/lib/staff-nav";
+import { ROLE_HOME } from "@/lib/roles";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { BackLink } from "@/components/ui/back-link";
@@ -20,12 +21,14 @@ export default async function StaffStudentDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; errorField?: string }>;
 }) {
   const session = await auth();
-  if (!session?.user || session.user.role !== "STAFF") redirect("/login");
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "STAFF") redirect(ROLE_HOME[session.user.role]);
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, errorField } = await searchParams;
+  const fieldError = (name: string) => (errorField === name ? error : undefined);
 
   const student = await prisma.student.findUnique({
     where: { id },
@@ -60,7 +63,7 @@ export default async function StaffStudentDetailPage({
         action={<StatusBadge value={student.status} />}
       />
 
-      {error && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
+      {error && !errorField && <p className="mb-4 text-sm text-danger">{decodeURIComponent(error)}</p>}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
@@ -215,10 +218,10 @@ export default async function StaffStudentDetailPage({
               />
               <CardBody>
                 <form action={promoteToAlumnus.bind(null, student.id)} className="space-y-3">
-                  <Field label="Company (optional)" name="company" defaultValue={student.placement?.company ?? ""} />
-                  <Field label="Role (optional)" name="role" defaultValue={student.placement?.role ?? ""} />
-                  <Field label="Package, INR lakhs (optional)" type="number" step="0.1" min="0" name="packageInrLakhs" defaultValue={student.placement?.packageInrLakhs ?? ""} />
-                  <Field label="Joining date (optional)" type="date" name="joiningDate" />
+                  <Field label="Company (optional)" name="company" defaultValue={student.placement?.company ?? ""} error={fieldError("company")} />
+                  <Field label="Role (optional)" name="role" defaultValue={student.placement?.role ?? ""} error={fieldError("role")} />
+                  <Field label="Package, INR lakhs (optional)" type="number" step="0.1" min="0" name="packageInrLakhs" defaultValue={student.placement?.packageInrLakhs ?? ""} error={fieldError("packageInrLakhs")} />
+                  <Field label="Joining date (optional)" type="date" name="joiningDate" error={fieldError("joiningDate")} />
                   <Button type="submit" variant="primary" className="w-full">
                     Mark as alumnus
                   </Button>

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { appendEvent, isRealStatusChange } from "@/lib/events";
 import { notifyApplicant } from "@/lib/notifications";
+import { redirectWithFieldError } from "@/lib/form-errors";
 
 /** /staff is reachable by STAFF, COMMITTEE and VOLUNTEER alike, but
  * individual actions here are narrower (STAFF-only or COMMITTEE-only) —
@@ -29,7 +30,7 @@ export async function addApplicantRemark(applicantId: string, formData: FormData
     note: z.string().trim().min(3).max(3000),
     idempotencyKey: z.string().uuid(),
   }).safeParse({ note: formData.get("note"), idempotencyKey: formData.get("idempotencyKey") });
-  if (!parsed.success) redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Enter a remark")}`);
+  if (!parsed.success) redirectWithFieldError(`/staff/applicants/${applicantId}`, parsed.error, "Enter a remark");
   await prisma.$transaction(async (tx) => {
     await tx.applicant.findUniqueOrThrow({ where: { id: applicantId }, select: { id: true } });
     await appendEvent(tx, {
@@ -141,9 +142,7 @@ export async function submitScore(applicantId: string, formData: FormData) {
     intentClarity: formData.get("intentClarity"),
     notes: formData.get("notes") || undefined,
   });
-  if (!parsed.success) {
-    redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
-  }
+  if (!parsed.success) redirectWithFieldError(`/staff/applicants/${applicantId}`, parsed.error, "Invalid input");
   const data = parsed.data;
 
   await prisma.$transaction(async (tx) => {
@@ -192,7 +191,7 @@ export async function recordDecision(applicantId: string, formData: FormData) {
   }
   const reason = String(formData.get("reason") ?? "").trim();
   if (decision === "REJECTED" && reason.length < 3) {
-    redirect(`/staff/applicants/${applicantId}?error=Enter+a+rejection+reason`);
+    redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent("Enter a rejection reason")}&errorField=reason`);
   }
 
   // Append-only: a decision, once recorded, is never overwritten by this
@@ -253,7 +252,7 @@ export async function scheduleOfflineMeeting(applicantId: string, formData: Form
     scheduledAt: formData.get("scheduledAt"),
     location: formData.get("location"),
   });
-  if (!parsed.success) redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Check the meeting details")}`);
+  if (!parsed.success) redirectWithFieldError(`/staff/applicants/${applicantId}`, parsed.error, "Check the meeting details");
 
   const applicant = await prisma.applicant.findUniqueOrThrow({ where: { id: applicantId } });
   if (applicant.status !== "SHORTLISTED") redirect(`/staff/applicants/${applicantId}?error=Only+applicants+who+passed+the+online+interview+can+be+scheduled`);
@@ -289,8 +288,8 @@ export async function recordOfflineMeetingDecision(applicantId: string, formData
     reason: formData.get("reason") ?? "",
     remarks: formData.get("remarks") ?? "",
   });
-  if (!parsed.success) redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid decision")}`);
-  if (parsed.data.decision === "REJECTED" && parsed.data.reason.length < 3) redirect(`/staff/applicants/${applicantId}?error=Enter+a+rejection+reason`);
+  if (!parsed.success) redirectWithFieldError(`/staff/applicants/${applicantId}`, parsed.error, "Invalid decision");
+  if (parsed.data.decision === "REJECTED" && parsed.data.reason.length < 3) redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent("Enter a rejection reason")}&errorField=reason`);
 
   const result = await prisma.$transaction(async (tx) => {
     const applicant = await tx.applicant.findUniqueOrThrow({ where: { id: applicantId } });
@@ -367,9 +366,7 @@ export async function onboardStudent(applicantId: string, formData: FormData) {
     transportCovered: formData.get("transportCovered"),
     materialsCovered: formData.get("materialsCovered"),
   });
-  if (!parsed.success) {
-    redirect(`/staff/applicants/${applicantId}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
-  }
+  if (!parsed.success) redirectWithFieldError(`/staff/applicants/${applicantId}`, parsed.error, "Invalid input");
   const data = parsed.data;
 
   await prisma.$transaction(async (tx) => {

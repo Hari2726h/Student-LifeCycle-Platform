@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
 import { submitTutoringSession } from "../actions";
 
-export default async function VolunteerTutoring({ searchParams }: { searchParams: Promise<{ activityId?: string; error?: string; saved?: string }> }) {
+export default async function VolunteerTutoring({ searchParams }: { searchParams: Promise<{ activityId?: string; error?: string; errorField?: string; saved?: string }> }) {
   const session = await requireRole(["VOLUNTEER"]);
   const query = await searchParams;
+  const fieldError = (name: string) => (query.errorField === name ? query.error : undefined);
   const assignments = await prisma.activityAssignment.findMany({
     where: { volunteerId: session.user.id, activity: { type: "TUTORING", studentId: { not: null } } },
     include: { activity: { include: { student: { include: { user: { select: { name: true } }, college: true } } } } },
@@ -36,7 +37,7 @@ export default async function VolunteerTutoring({ searchParams }: { searchParams
   return (
     <VolunteerShell name={session.user.name ?? "Volunteer"}>
       <PageHeader eyebrow="Learning support" title="Tutoring" description="Manage assigned student sessions, teaching hours and learning progress." />
-      {query.error && <p role="alert" className="mb-4 text-sm text-danger">{query.error}</p>}{query.saved && <p role="status" className="mb-4 text-sm text-success">Tutoring session saved to history.</p>}
+      {query.error && !query.errorField && <p role="alert" className="mb-4 text-sm text-danger">{query.error}</p>}{query.saved && <p role="status" className="mb-4 text-sm text-success">Tutoring session saved to history.</p>}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric title="Assigned students" value={assignments.length} /><Metric title="Upcoming sessions" value={upcoming.length} /><Metric title="Completed sessions" value={sessions.filter((item) => item.attendance === "PRESENT").length} /><Metric title="Teaching hours" value={totalHours.toFixed(1)} /></div>
       <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr]">
         <Card><CardHeader title="Student assignments" description="Students linked to tutoring activities assigned to you." /><CardBody className="space-y-3">
@@ -48,8 +49,8 @@ export default async function VolunteerTutoring({ searchParams }: { searchParams
           {selected ? <form action={submitTutoringSession} className="space-y-4">
             <input type="hidden" name="idempotencyKey" value={randomUUID()} /><input type="hidden" name="studentId" value={selected.activity.studentId ?? ""} /><input type="hidden" name="studentName" value={selected.activity.student?.user.name ?? ""} />
             <input type="hidden" name="assignmentId" value={selected.id} /><p className="text-sm text-ink-muted">{selected.activity.student?.user.name} · {selected.activity.name}</p>
-            <div className="grid gap-4 sm:grid-cols-2"><Field label="Subject" name="subject" required defaultValue={selected.activity.subject ?? ""} /><Field label="Topic covered" name="topic" required /><Field label="Session date" name="sessionAt" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} /><Field label="Duration (hours)" name="durationHours" type="number" min="0.25" max="12" step="0.25" defaultValue="1" /><Field label="Start time" name="startTime" type="time" /><Field label="End time" name="endTime" type="time" /><Select label="Teaching mode" name="mode"><option value="OFFLINE">Offline</option><option value="ONLINE">Online</option></Select><Select label="Attendance" name="attendance"><option value="PRESENT">Present</option><option value="ABSENT">Absent</option></Select></div>
-            <TextArea label="Student understanding" name="understanding" rows={2} /><TextArea label="Homework assigned" name="homework" rows={2} /><Field label="Assessment mark (0–100)" name="assessmentMark" type="number" min="0" max="100" step="0.5" /><Field label="Next session date" name="nextSessionAt" type="date" /><TextArea label="Tutor comments" name="comments" rows={3} />
+            <div className="grid gap-4 sm:grid-cols-2"><Field label="Subject" name="subject" required defaultValue={selected.activity.subject ?? ""} error={fieldError("subject")} /><Field label="Topic covered" name="topic" required error={fieldError("topic")} /><Field label="Session date" name="sessionAt" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} error={fieldError("sessionAt")} /><Field label="Duration (hours)" name="durationHours" type="number" min="0.25" max="12" step="0.25" defaultValue="1" error={fieldError("durationHours")} /><Field label="Start time" name="startTime" type="time" /><Field label="End time" name="endTime" type="time" /><Select label="Teaching mode" name="mode"><option value="OFFLINE">Offline</option><option value="ONLINE">Online</option></Select><Select label="Attendance" name="attendance"><option value="PRESENT">Present</option><option value="ABSENT">Absent</option></Select></div>
+            <TextArea label="Student understanding" name="understanding" rows={2} /><TextArea label="Homework assigned" name="homework" rows={2} /><Field label="Assessment mark (0–100)" name="assessmentMark" type="number" min="0" max="100" step="0.5" error={fieldError("assessmentMark")} /><Field label="Next session date" name="nextSessionAt" type="date" /><TextArea label="Tutor comments" name="comments" rows={3} />
             <Button type="submit">Save session</Button>
           </form> : <p className="text-sm text-ink-muted">A tutoring activity must be linked to an active student by program staff before sessions can be recorded.</p>}
         </CardBody></Card>

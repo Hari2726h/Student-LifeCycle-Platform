@@ -26,10 +26,11 @@ export default async function PhysicalVerificationDetails({
   searchParams,
 }: {
   params: Promise<{ applicantId: string }>;
-  searchParams: Promise<{ activityId?: string; error?: string; saved?: string }>;
+  searchParams: Promise<{ activityId?: string; error?: string; errorField?: string; saved?: string }>;
 }) {
   const session = await requireRole(["VOLUNTEER"]);
   const [{ applicantId }, query] = await Promise.all([params, searchParams]);
+  const fieldError = (name: string) => (query.errorField === name ? query.error : undefined);
   const applicant = await prisma.applicant.findUnique({
     where: { id: applicantId },
     include: {
@@ -57,7 +58,7 @@ export default async function PhysicalVerificationDetails({
     <VolunteerShell name={session.user.name ?? "Volunteer"}>
       <BackLink href="/volunteer/physical-verifications" label="Back to physical verifications" />
       <PageHeader eyebrow="Physical verification" title={applicant.fullName} description={`Application ${applicant.id.slice(-10).toUpperCase()} · ${applicant.district}`} action={<StatusBadge value={applicant.verification?.decision ?? applicant.status} />} />
-      {query.error && <p role="alert" className="mb-4 rounded-md bg-danger-soft p-3 text-sm text-danger">{query.error}</p>}
+      {query.error && !query.errorField && <p role="alert" className="mb-4 rounded-md bg-danger-soft p-3 text-sm text-danger">{query.error}</p>}
       {query.saved && <p role="status" className="mb-4 rounded-md bg-success-soft p-3 text-sm text-success">Visit report and evidence saved. Your report is in the history below.</p>}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
@@ -78,13 +79,13 @@ export default async function PhysicalVerificationDetails({
           <Card><CardHeader title="Field visit report" description="A new report is appended to history. It does not replace previous visits." /><CardBody>
             <form action={submitPhysicalVerification} className="space-y-4">
               <input type="hidden" name="applicantId" value={applicant.id} /><input type="hidden" name="activityId" value={activityId} /><input type="hidden" name="idempotencyKey" value={randomUUID()} />
-              <div className="grid gap-4 sm:grid-cols-2"><Field label="Actual visit date and time" name="visitAt" type="datetime-local" required /><Field label="Person met" name="personMet" /><Field label="Relationship to student" name="relationshipToStudent" /><Field label="Visit location" name="visitLocation" defaultValue={info?.addressLine1 ?? ""} /></div>
+              <div className="grid gap-4 sm:grid-cols-2"><Field label="Actual visit date and time" name="visitAt" type="datetime-local" required error={fieldError("visitAt")} /><Field label="Person met" name="personMet" /><Field label="Relationship to student" name="relationshipToStudent" /><Field label="Visit location" name="visitLocation" defaultValue={info?.addressLine1 ?? ""} /></div>
               <fieldset className="rounded-md border border-border p-3"><legend className="px-1 text-sm font-medium">Verification checklist</legend><div className="grid gap-2 text-sm sm:grid-cols-2">{CHECKS.map(([name, label]) => <label key={name} className="flex gap-2"><input type="checkbox" name={name} />{label}</label>)}<label className="flex gap-2"><input type="checkbox" name="photoEvidenceCollected" disabled /> Evidence is recorded with uploads</label></div></fieldset>
-              <div className="grid gap-4 sm:grid-cols-2"><Select label="Housing condition" name="housingCondition" required placeholder="Select"><option value="KUTCHA">Kutcha</option><option value="SEMI_PUCCA">Semi-pucca</option><option value="PUCCA">Pucca</option></Select><Field label="Confirmed household size" name="confirmedHouseholdSize" type="number" min="1" max="30" /><Field label="Number of earning members" name="earningMembers" type="number" min="0" max="30" /><Field label="Number of dependents" name="dependents" type="number" min="0" max="30" /><Field label="Guardian occupation" name="guardianOccupation" /><Field label="Student interest in higher education" name="higherEducationInterest" /></div>
-              <TextArea label="Family financial condition" name="financialCondition" rows={2} /><TextArea label="PV reason" name="pvReason" rows={2} /><TextArea label="Family financial circumstances" name="familyCircumstances" rows={2} /><TextArea label="Student educational interest" name="educationInterest" rows={2} /><TextArea label="Volunteer observations" name="observations" rows={3} /><TextArea label="Final recommendation" name="recommendation" rows={2} />
+              <div className="grid gap-4 sm:grid-cols-2"><Select label="Housing condition" name="housingCondition" required placeholder="Select" error={fieldError("housingCondition")}><option value="KUTCHA">Kutcha</option><option value="SEMI_PUCCA">Semi-pucca</option><option value="PUCCA">Pucca</option></Select><Field label="Confirmed household size" name="confirmedHouseholdSize" type="number" min="1" max="30" error={fieldError("confirmedHouseholdSize")} /><Field label="Number of earning members" name="earningMembers" type="number" min="0" max="30" error={fieldError("earningMembers")} /><Field label="Number of dependents" name="dependents" type="number" min="0" max="30" error={fieldError("dependents")} /><Field label="Guardian occupation" name="guardianOccupation" /><Field label="Student interest in higher education" name="higherEducationInterest" /></div>
+              <TextArea label="Family financial condition" name="financialCondition" rows={2} /><TextArea label="PV reason" name="pvReason" rows={2} /><TextArea label="Family financial circumstances" name="familyCircumstances" rows={2} /><TextArea label="Student educational interest" name="educationInterest" rows={2} /><TextArea label="Volunteer observations" name="observations" rows={3} error={fieldError("observations")} /><TextArea label="Final recommendation" name="recommendation" rows={2} />
               <div className="grid gap-4 sm:grid-cols-2"><FilePreviewInput label="House photographs" name="housePhotos" accept="image/*" multiple /><FilePreviewInput label="Student photographs" name="studentPhotos" accept="image/*" multiple /><FilePreviewInput label="Income proof" name="incomeProof" accept="image/*,application/pdf" multiple /><FilePreviewInput label="Address proof" name="addressProof" accept="image/*,application/pdf" multiple /><FilePreviewInput label="Supporting documents" name="supportingDocuments" accept="image/*,application/pdf" multiple /></div>
               <p className="text-xs text-ink-faint">Up to four images or PDFs, maximum 8 MB each. Files are stored privately and can only be retrieved by the assigned volunteer or staff.</p>
-              <Select label="Verification decision" name="decision" required><option value="APPROVED">Approve · Move to interview</option><option value="NEEDS_FOLLOW_UP">Needs follow-up visit</option><option value="REJECTED">Reject</option></Select>
+              <Select label="Verification decision" name="decision" required error={fieldError("decision")}><option value="APPROVED">Approve · Move to interview</option><option value="NEEDS_FOLLOW_UP">Needs follow-up visit</option><option value="REJECTED">Reject</option></Select>
               <Button type="submit">Submit visit report</Button>
             </form>
           </CardBody></Card>

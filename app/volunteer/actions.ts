@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { appendEvent } from "@/lib/events";
 import { notifyApplicant } from "@/lib/notifications";
 import { describeUploadError, putActivityMediaDirect, putObjectDirect } from "@/lib/storage";
+import { redirectWithFieldError } from "@/lib/form-errors";
 
 async function requireVolunteer() {
   const session = await auth();
@@ -130,7 +131,7 @@ export async function createVolunteerActivity(formData: FormData) {
     studentId: text(formData, "studentId"),
     idempotencyKey: text(formData, "idempotencyKey"),
   });
-  if (!parsed.success) redirect(`/staff/volunteers?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid activity")}`);
+  if (!parsed.success) redirectWithFieldError("/staff/volunteers", parsed.error, "Invalid activity");
   const data = parsed.data;
   const volunteerIds = [...new Set(formData.getAll("volunteerIds").filter((v): v is string => typeof v === "string" && v.length > 0))];
   if (volunteerIds.length === 0) redirect("/staff/volunteers?error=Assign+at+least+one+volunteer");
@@ -576,10 +577,17 @@ export async function submitPhysicalVerification(formData: FormData) {
     recommendation: text(formData, "recommendation"),
     decision: text(formData, "decision"),
   });
-  if (!parsed.success) redirect(`/volunteer/physical-verifications?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Check the visit details")}`);
+  if (!parsed.success) {
+    const rawApplicantId = text(formData, "applicantId");
+    redirectWithFieldError(
+      rawApplicantId ? `/volunteer/physical-verifications/${rawApplicantId}` : "/volunteer/physical-verifications",
+      parsed.error,
+      "Check the visit details",
+    );
+  }
   const data = parsed.data;
   if (data.decision === "REJECTED" && data.observations.trim().length < 3) {
-    redirect(`/volunteer/physical-verifications?error=Add+a+reason+in+the+observations+field+before+rejecting`);
+    redirect(`/volunteer/physical-verifications/${data.applicantId}?error=${encodeURIComponent("Add a reason in the observations field before rejecting")}&errorField=observations`);
   }
   const activityAssignment = data.activityId
     ? await prisma.activityAssignment.findFirst({
@@ -783,7 +791,7 @@ export async function submitTutoringSession(formData: FormData) {
     assessmentMark: text(formData, "assessmentMark") || "",
     idempotencyKey: text(formData, "idempotencyKey"),
   });
-  if (!parsed.success) redirect(`/volunteer/tutoring?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Check the session fields")}`);
+  if (!parsed.success) redirectWithFieldError("/volunteer/tutoring", parsed.error, "Check the session fields");
   const data = parsed.data;
   const assignment = data.assignmentId
     ? await prisma.activityAssignment.findFirst({
