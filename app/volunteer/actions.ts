@@ -441,7 +441,7 @@ export async function submitCallVerification(formData: FormData) {
   if (prior) redirect("/volunteer/call-verifications?saved=1");
   let attemptNumber = 0;
   const call = await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${applicant.id}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${applicant.id}))`;
     attemptNumber = (await tx.callVerification.count({ where: { applicantId: applicant.id } })) + 1;
     const created = await tx.callVerification.create({
       data: {
