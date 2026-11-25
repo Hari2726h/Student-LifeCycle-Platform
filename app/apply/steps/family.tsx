@@ -9,10 +9,12 @@ export function FamilyStep({
   lang,
   info,
   error,
+  errorField,
 }: {
   lang: Lang;
   info: ApplicantSensitiveInfo | null;
   error?: string;
+  errorField?: string;
 }) {
   const strings = t(lang);
   const family = info?.familyDetails && typeof info.familyDetails === "object" && !Array.isArray(info.familyDetails)
@@ -20,15 +22,17 @@ export function FamilyStep({
     : {};
   const value = (key: string, fallback = "") => typeof family[key] === "string" ? family[key] as string : fallback;
   const siblings = Array.isArray(family.siblings) ? family.siblings as SiblingValue[] : [];
+  const fieldError = (name: string) => (errorField === name ? error : undefined);
 
   return (
     <form action={saveStep3} className="space-y-4">
-      <Field label={strings.addressLine1} name="addressLine1" required defaultValue={info?.addressLine1} error={error} />
+      {error && !errorField && <p role="alert" className="text-sm text-danger">{error}</p>}
+      <Field label={strings.addressLine1} name="addressLine1" required defaultValue={info?.addressLine1} error={fieldError("addressLine1")} />
       <Field label={strings.addressLine2} name="addressLine2" defaultValue={info?.addressLine2 ?? ""} />
-      <Field label={strings.pincode} name="pincode" inputMode="numeric" maxLength={6} required defaultValue={info?.pincode} />
+      <Field label={strings.pincode} name="pincode" inputMode="numeric" maxLength={6} required defaultValue={info?.pincode} error={fieldError("pincode")} />
       <div className="grid grid-cols-2 gap-4">
         <Field label={strings.guardianName} name="guardianName" required defaultValue={info?.guardianName} />
-        <Field label={strings.guardianPhone} name="guardianPhone" inputMode="numeric" maxLength={10} required defaultValue={info?.guardianPhone} />
+        <Field label={strings.guardianPhone} name="guardianPhone" inputMode="numeric" maxLength={10} required defaultValue={info?.guardianPhone} error={fieldError("guardianPhone")} />
       </div>
       <section className="space-y-3 border-t border-border pt-4">
         <h2 className="text-sm font-semibold">Parents and siblings</h2>
@@ -37,14 +41,14 @@ export function FamilyStep({
           <Field label="Father's occupation" name="fatherOccupation" required defaultValue={value("fatherOccupation")} />
           <Field label="Mother's name" name="motherName" required defaultValue={value("motherName")} />
           <Field label="Mother's occupation" name="motherOccupation" required defaultValue={value("motherOccupation")} />
-          <Field label="Parents' contact number" name="parentsContactNumber" type="tel" inputMode="numeric" maxLength={10} required defaultValue={value("parentsContactNumber")} />
+          <Field label="Parents' contact number" name="parentsContactNumber" type="tel" inputMode="numeric" maxLength={10} required defaultValue={value("parentsContactNumber")} error={fieldError("parentsContactNumber")} />
           <Select label="House ownership" name="houseOwnership" required defaultValue={value("houseOwnership")} placeholder="Select"><option value="OWN">Own house</option><option value="RENTED">Rented house</option><option value="OTHER">Other</option></Select>
           <Field label="State" name="state" required defaultValue={value("state", "Tamil Nadu")} />
         </div>
         <div><p className="mb-2 text-sm font-medium">Sibling details</p><SiblingFields initial={siblings} /></div>
       </section>
       <div className="grid grid-cols-2 gap-4">
-        <Field label={strings.annualIncome} type="number" name="annualIncomeInr" min={0} required defaultValue={info?.annualIncomeInr ?? undefined} />
+        <Field label={strings.annualIncome} type="number" name="annualIncomeInr" min={0} required defaultValue={info?.annualIncomeInr ?? undefined} error={fieldError("annualIncomeInr")} />
         <Field label={strings.householdSize} type="number" name="householdSize" min={1} max={30} defaultValue={info?.householdSize ?? undefined} />
       </div>
       <Select label={strings.familySituation} name="familySituation" required defaultValue={info?.familySituation ?? ""} placeholder="Select">

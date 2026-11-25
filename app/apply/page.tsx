@@ -20,7 +20,7 @@ import { ReviewStep } from "./steps/review";
 export default async function ApplyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ step?: string; error?: string }>;
+  searchParams: Promise<{ step?: string; error?: string; errorField?: string }>;
 }) {
   const params = await searchParams;
   const cookieStore = await cookies();
@@ -98,9 +98,9 @@ export default async function ApplyPage({
   return (
     <div className="bg-bg">
       <WizardShell lang={lang} step={step} maxStep={maxStep}>
-        {step === 1 && <PersonalStep lang={lang} applicant={applicant} aadhaarLast4={applicant?.identityInfo?.aadhaarLast4} error={params.error} />}
-        {step === 2 && applicant && <AcademicStep lang={lang} applicant={applicant} colleges={colleges} error={params.error} />}
-        {step === 3 && <FamilyStep lang={lang} info={applicant?.sensitiveInfo ?? null} error={params.error} />}
+        {step === 1 && <PersonalStep lang={lang} applicant={applicant} aadhaarLast4={applicant?.identityInfo?.aadhaarLast4} error={params.error} errorField={params.errorField} />}
+        {step === 2 && applicant && <AcademicStep lang={lang} applicant={applicant} colleges={colleges} error={params.error} errorField={params.errorField} />}
+        {step === 3 && <FamilyStep lang={lang} info={applicant?.sensitiveInfo ?? null} error={params.error} errorField={params.errorField} />}
         {step === 4 && <DocumentsStep lang={lang} documents={applicant?.documents ?? []} error={params.error} />}
         {step === 5 && applicant && (
           <ReviewStep

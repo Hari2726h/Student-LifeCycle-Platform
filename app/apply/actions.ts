@@ -53,6 +53,28 @@ export async function setLanguageAction(lang: Lang) {
   store.set(LANG_COOKIE, lang, { path: "/", maxAge: 60 * 60 * 24 * 365 });
 }
 
+/** Without errorField, a validation failure on one field in a long,
+ * multi-section step (e.g. "Headmaster's contact number" at the bottom of
+ * the academic step) rendered as a generic banner at the top of the page —
+ * indistinguishable from an error about whatever field happened to be
+ * first. Field, Select and TextArea already render an inline error right
+ * under the named input when given one; this just wires the redirect up
+ * to say which field it's actually about. path[0] is a plain field name
+ * for object schemas but an array index for the sibling list, where no
+ * single named input exists to highlight — the string check skips that
+ * case and falls back to the generic banner, correctly. */
+function redirectWithFieldError(
+  path: string,
+  error: z.ZodError,
+  fallback: string,
+  extraParams?: Record<string, string>,
+): never {
+  const issue = error.issues[0];
+  const params = new URLSearchParams({ ...extraParams, error: issue?.message ?? fallback });
+  if (typeof issue?.path[0] === "string") params.set("errorField", issue.path[0]);
+  redirect(`${path}?${params.toString()}`);
+}
+
 const phoneSchema = z
   .string()
   .trim()
@@ -90,9 +112,7 @@ export async function saveStep1(formData: FormData) {
     community: formData.get("community"),
     email: formData.get("email"),
   });
-  if (!parsed.success) {
-    redirect(`/apply?step=1&error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
-  }
+  if (!parsed.success) redirectWithFieldError("/apply", parsed.error, "Invalid input", { step: "1" });
 
   const data = parsed.data;
   const existingIdentity = await prisma.applicant.findUnique({ where: { userId: user.id }, select: { id: true, identityInfo: { select: { id: true } } } });
@@ -207,9 +227,7 @@ export async function saveStep2(formData: FormData) {
     preferredCollegeId: formData.get("preferredCollegeId") || undefined,
     ...Object.fromEntries(Object.keys(schoolSchema.shape).map((key) => [key, formData.get(key)])),
   });
-  if (!parsed.success) {
-    redirect(`/apply?step=2&error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
-  }
+  if (!parsed.success) redirectWithFieldError("/apply", parsed.error, "Invalid input", { step: "2" });
 
   const { boardPercentage, courseInterest, preferredCollegeId, ...academicDetails } = parsed.data;
   await prisma.applicant.update({
@@ -294,14 +312,10 @@ export async function saveStep3(formData: FormData) {
     howHeardAbout: formData.get("howHeardAbout"),
     additionalInformation: formData.get("additionalInformation") ?? "",
   });
-  if (!parsed.success) {
-    redirect(`/apply?step=3&error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
-  }
+  if (!parsed.success) redirectWithFieldError("/apply", parsed.error, "Invalid input", { step: "3" });
 
   const parsedSiblings = z.array(siblingSchema).max(10, "Add up to 10 siblings").safeParse(siblings);
-  if (!parsedSiblings.success) {
-    redirect(`/apply?step=3&error=${encodeURIComponent(parsedSiblings.error.issues[0]?.message ?? "Check sibling details")}`);
-  }
+  if (!parsedSiblings.success) redirectWithFieldError("/apply", parsedSiblings.error, "Check sibling details", { step: "3" });
 
   await prisma.applicantSensitiveInfo.upsert({
     where: { applicantId: applicant.id },
@@ -481,9 +495,7 @@ export async function createAssistedApplication(formData: FormData) {
     householdSize: formData.get("householdSize") || undefined,
     familySituation: formData.get("familySituation"),
   });
-  if (!parsed.success) {
-    redirect(`/apply/assist?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
-  }
+  if (!parsed.success) redirectWithFieldError("/apply/assist", parsed.error, "Invalid input");
   const data = parsed.data;
 
   const familyUser = await prisma.user.upsert({
