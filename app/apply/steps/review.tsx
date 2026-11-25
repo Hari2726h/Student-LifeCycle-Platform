@@ -39,7 +39,7 @@ export function ReviewStep({
       </ReviewSection>
 
       <ReviewSection title={strings.stepAcademic}>
-        <Row label={strings.boardPercentage} value={applicant.boardPercentage ? `${applicant.boardPercentage}%` : "—"} />
+        <Row label={strings.boardPercentage} value={applicant.boardPercentage != null ? `${applicant.boardPercentage}%` : "—"} />
         <Row label={strings.courseInterest} value={applicant.courseInterest ?? "—"} />
         <Row label={strings.preferredCollege} value={college ? college.name : "No preference"} />
         <Row label="10th school" value={detail(academic, "school10Name")} />

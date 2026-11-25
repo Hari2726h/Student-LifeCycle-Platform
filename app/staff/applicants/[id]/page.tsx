@@ -169,7 +169,7 @@ export default async function ApplicantDetailPage({
               <Row label="Gender" value={applicant.gender} />
               <Row label="Community" value={applicant.community ?? "Not provided"} />
               <Row label="Aadhaar" value={applicant.identityInfo ? `XXXX-XXXX-${applicant.identityInfo.aadhaarLast4}` : "Not provided"} />
-              <Row label="Board %" value={applicant.boardPercentage ? `${applicant.boardPercentage}%` : "—"} />
+              <Row label="Board %" value={applicant.boardPercentage != null ? `${applicant.boardPercentage}%` : "—"} />
               <Row label="Preferred college" value={applicant.preferredCollege?.name ?? "No preference"} />
               <Row label="Assigned volunteer" value={applicant.volunteer?.name ?? "Unassigned"} />
             </CardBody>
@@ -183,7 +183,7 @@ export default async function ApplicantDetailPage({
                   <>
                     <Row label="Address" value={`${applicant.sensitiveInfo.addressLine1}, ${applicant.sensitiveInfo.pincode}`} />
                     <Row label="Guardian" value={`${applicant.sensitiveInfo.guardianName} · ${applicant.sensitiveInfo.guardianPhone}`} />
-                    <Row label="Annual income" value={applicant.sensitiveInfo.annualIncomeInr ? `₹${applicant.sensitiveInfo.annualIncomeInr}` : "—"} />
+                    <Row label="Annual income" value={applicant.sensitiveInfo.annualIncomeInr != null ? `₹${applicant.sensitiveInfo.annualIncomeInr}` : "—"} />
                     <Row label="Household size" value={String(applicant.sensitiveInfo.householdSize ?? "—")} />
                     <Row label="Family situation" value={applicant.sensitiveInfo.familySituation.replaceAll("_", " ")} />
                     <Row label="Parents" value={`${String(familyDetails?.fatherName ?? "Not provided")} · ${String(familyDetails?.motherName ?? "Not provided")}`} />
