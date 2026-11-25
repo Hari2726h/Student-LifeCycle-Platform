@@ -5,11 +5,11 @@ import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
-import { Field } from "@/components/ui/input";
+import { Field, TextArea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, Thead, Th, Tr, Td, TableScroll } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { selfReportCareerEvent, toggleMentoringOptIn, toggleReferralFlag } from "./actions";
+import { selfReportCareerEvent, toggleMentoringOptIn, toggleReferralFlag, logKarpomSession } from "./actions";
 
 const SOURCE_TONE: Record<string, "accent" | "info" | "gold"> = {
   SELF_REPORTED: "accent",
@@ -249,7 +249,18 @@ export default async function PortalHome() {
             {student.alumniProfile && (
               <Card className="border-gold/30 bg-gold-soft/40">
                 <CardHeader eyebrow="Giving back" title="Karpom Karpippom" />
-                <CardBody>
+                <CardBody className="space-y-4">
+                  <form action={logKarpomSession} className="grid grid-cols-1 gap-2 border-b border-border pb-4 sm:grid-cols-2">
+                    <Field label="Junior's name" name="juniorName" required />
+                    <Field label="Junior's contact (optional)" name="juniorContact" />
+                    <Field label="Subject" name="subject" required />
+                    <Field label="Session date" type="date" name="sessionDate" required />
+                    <TextArea label="Notes (optional)" name="notes" rows={2} className="sm:col-span-2" />
+                    <Button type="submit" variant="secondary" size="sm" className="sm:col-span-2">
+                      Log session
+                    </Button>
+                  </form>
+
                   {student.alumniProfile.karpomSessions.length === 0 ? (
                     <p className="text-sm text-ink-faint">No tutoring sessions logged yet.</p>
                   ) : (
