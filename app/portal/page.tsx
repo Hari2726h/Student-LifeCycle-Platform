@@ -221,6 +221,9 @@ export default async function PortalHome() {
                       </li>
                     ))}
                   </ul>
+                  {student.sponsorship.notes && (
+                    <p className="mt-3 border-t border-border pt-3 text-xs text-ink-faint">{student.sponsorship.notes}</p>
+                  )}
                 </CardBody>
               </Card>
             )}

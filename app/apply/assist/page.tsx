@@ -77,7 +77,7 @@ export default async function AssistPage({
             <Select label="Preferred college (optional)" name="preferredCollegeId" placeholder="No preference">
               {colleges.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name} · {c.district}
+                  {c.name} · {c.district}{c.isPartner ? " · Partner college" : ""}
                 </option>
               ))}
             </Select>

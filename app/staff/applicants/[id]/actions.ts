@@ -340,6 +340,7 @@ const onboardSchema = z.object({
   foodCovered: z.coerce.boolean(),
   transportCovered: z.coerce.boolean(),
   materialsCovered: z.coerce.boolean(),
+  sponsorshipNotes: z.string().trim().max(1000).optional(),
 });
 
 /** Converts an ACCEPTED applicant into the long-lived Student record:
@@ -365,6 +366,7 @@ export async function onboardStudent(applicantId: string, formData: FormData) {
     foodCovered: formData.get("foodCovered"),
     transportCovered: formData.get("transportCovered"),
     materialsCovered: formData.get("materialsCovered"),
+    sponsorshipNotes: formData.get("sponsorshipNotes") || undefined,
   });
   if (!parsed.success) redirectWithFieldError(`/staff/applicants/${applicantId}`, parsed.error, "Invalid input");
   const data = parsed.data;
@@ -386,6 +388,7 @@ export async function onboardStudent(applicantId: string, formData: FormData) {
             foodCovered: data.foodCovered,
             transportCovered: data.transportCovered,
             materialsCovered: data.materialsCovered,
+            notes: data.sponsorshipNotes || null,
           },
         },
       },

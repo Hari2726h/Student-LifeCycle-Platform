@@ -95,6 +95,9 @@ export default async function PhysicalVerificationDetails({
               <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium">{report.visitAt.toLocaleString()} · {report.personMet ?? "No contact recorded"}</p><StatusBadge value={report.decision} /></div>
               <p className="mt-1 text-xs text-ink-faint">Submitted {report.createdAt.toLocaleString()} · Housing {report.housingCondition?.replaceAll("_", " ") ?? "not recorded"} · Household {report.confirmedHouseholdSize ?? "not recorded"}</p>
               {report.observations && <p className="mt-2 text-sm text-ink-muted">{report.observations}</p>}
+              {report.financialCondition && <p className="mt-1 text-xs text-ink-faint">Financial condition: {report.financialCondition}</p>}
+              {report.familyCircumstances && <p className="mt-1 text-xs text-ink-faint">Family circumstances: {report.familyCircumstances}</p>}
+              {report.educationInterest && <p className="mt-1 text-xs text-ink-faint">Education interest: {report.educationInterest}</p>}
             </div>) : <p className="text-sm text-ink-muted">No visit reports yet.</p>}
           </CardBody></Card>
         </div>

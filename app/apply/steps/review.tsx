@@ -41,7 +41,7 @@ export function ReviewStep({
       <ReviewSection title={strings.stepAcademic}>
         <Row label={strings.boardPercentage} value={applicant.boardPercentage != null ? `${applicant.boardPercentage}%` : "—"} />
         <Row label={strings.courseInterest} value={applicant.courseInterest ?? "—"} />
-        <Row label={strings.preferredCollege} value={college ? college.name : "No preference"} />
+        <Row label={strings.preferredCollege} value={college ? `${college.name}${college.isPartner ? " (Partner college)" : ""}` : "No preference"} />
         <Row label="10th school" value={detail(academic, "school10Name")} />
         <Row label="10th marks / year" value={`${detail(academic, "school10Marks")} / ${detail(academic, "school10Year")}`} />
         <Row label="11th school" value={detail(academic, "school11Name")} />

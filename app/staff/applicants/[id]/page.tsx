@@ -183,7 +183,7 @@ export default async function ApplicantDetailPage({
               <Row label="Community" value={applicant.community ?? "Not provided"} />
               <Row label="Aadhaar" value={applicant.identityInfo ? `XXXX-XXXX-${applicant.identityInfo.aadhaarLast4}` : "Not provided"} />
               <Row label="Board %" value={applicant.boardPercentage != null ? `${applicant.boardPercentage}%` : "—"} />
-              <Row label="Preferred college" value={applicant.preferredCollege?.name ?? "No preference"} />
+              <Row label="Preferred college" value={applicant.preferredCollege ? `${applicant.preferredCollege.name}${applicant.preferredCollege.isPartner ? " (Partner college)" : ""}` : "No preference"} />
               <Row label="Assigned volunteer" value={applicant.volunteer?.name ?? "Unassigned"} />
             </CardBody>
           </Card>
@@ -239,7 +239,7 @@ export default async function ApplicantDetailPage({
               <CardHeader eyebrow="History" title="Verification history" />
               <CardBody className="space-y-4">
                 {applicant.callVerifications.map((call) => <div key={call.id} className="border-b border-border pb-3 last:border-0"><div className="flex flex-wrap justify-between gap-2 text-sm"><span className="font-medium">Call attempt {call.attemptNumber} · {call.status.replaceAll("_", " ")}</span><span className="text-xs text-ink-faint">{call.calledAt.toLocaleString()} · {call.volunteer.name}</span></div>{call.comments && <p className="mt-1 text-sm text-ink-muted">{call.comments}</p>}</div>)}
-                {applicant.physicalVerificationReports.map((report) => <div key={report.id} className="border-b border-border pb-3 last:border-0"><div className="flex flex-wrap justify-between gap-2 text-sm"><span className="font-medium">Physical visit · {report.decision.replaceAll("_", " ")}</span><span className="text-xs text-ink-faint">{report.visitAt.toLocaleString()} · {report.volunteer.name}</span></div>{report.observations && <p className="mt-1 text-sm text-ink-muted">{report.observations}</p>}</div>)}
+                {applicant.physicalVerificationReports.map((report) => <div key={report.id} className="border-b border-border pb-3 last:border-0"><div className="flex flex-wrap justify-between gap-2 text-sm"><span className="font-medium">Physical visit · {report.decision.replaceAll("_", " ")}</span><span className="text-xs text-ink-faint">{report.visitAt.toLocaleString()} · {report.volunteer.name}</span></div>{report.observations && <p className="mt-1 text-sm text-ink-muted">{report.observations}</p>}{report.financialCondition && <p className="mt-1 text-xs text-ink-faint">Financial condition: {report.financialCondition}</p>}{report.familyCircumstances && <p className="mt-1 text-xs text-ink-faint">Family circumstances: {report.familyCircumstances}</p>}{report.educationInterest && <p className="mt-1 text-xs text-ink-faint">Education interest: {report.educationInterest}</p>}</div>)}
               </CardBody>
             </Card>
           )}
@@ -648,6 +648,15 @@ function OnboardingSection({
                 </label>
               ))}
             </div>
+            <TextArea
+              label="Coverage notes (optional)"
+              name="sponsorshipNotes"
+              rows={2}
+              maxLength={1000}
+              placeholder="e.g. hostel covered only for first year"
+              className="mt-2"
+              error={fieldError("sponsorshipNotes")}
+            />
           </div>
 
           <Button type="submit" variant="primary" className="w-full" disabled={suggestions.length === 0}>
