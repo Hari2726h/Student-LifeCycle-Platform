@@ -10,6 +10,8 @@ const DEMO_ACCOUNTS = [
   { email: "volunteer@maatram.org", label: "Volunteer" },
   { email: "mentor1@maatram.org", label: "Mentor" },
   { email: "applicant6@example.com", label: "Applicant" },
+  { email: "applicant18@example.com", label: "Student" },
+  { email: "applicant21@example.com", label: "Alumni" },
 ];
 
 export default async function LoginPage({
