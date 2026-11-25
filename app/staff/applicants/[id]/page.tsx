@@ -83,8 +83,15 @@ export default async function ApplicantDetailPage({
   const showInterviewSection = VERIFIED_OR_LATER.includes(applicant.status);
   const myScore = applicant.interview?.scores.find((s) => s.panelistId === session.user.id);
 
+  // VERIFIED_OR_LATER also covers REJECTED/WAITLISTED applicants who got
+  // there straight from call/physical verification — scheduleInterview()
+  // already blocks that server-side via FINAL_APPLICANT_STATUSES, but
+  // without this check committee still saw a live-looking "Schedule
+  // interview" form that was guaranteed to fail. Scheduling only ever
+  // makes sense from VERIFIED.
+  const canScheduleInterview = applicant.status === "VERIFIED";
   const openSlots =
-    role === "COMMITTEE" && showInterviewSection && !applicant.interview ? await getOpenSlots() : [];
+    role === "COMMITTEE" && canScheduleInterview && !applicant.interview ? await getOpenSlots() : [];
 
   const deservingness =
     (role === "STAFF" || role === "COMMITTEE") && applicant.sensitiveInfo
@@ -264,6 +271,8 @@ export default async function ApplicantDetailPage({
               role={role}
               myScore={myScore}
               openSlots={openSlots}
+              canSchedule={canScheduleInterview}
+              status={applicant.status}
             />
           )}
 
@@ -353,6 +362,8 @@ function InterviewSection({
   role,
   myScore,
   openSlots,
+  canSchedule,
+  status,
 }: {
   applicantId: string;
   interview: {
@@ -368,14 +379,20 @@ function InterviewSection({
   role: string;
   myScore?: { academicMerit: number; financialNeed: number; communication: number; intentClarity: number };
   openSlots: { id: string; scheduledAt: Date; location: string; capacity: number; _count: { interviews: number } }[];
+  canSchedule: boolean;
+  status: string;
 }) {
   if (!interview) {
-    if (role !== "COMMITTEE") {
+    if (role !== "COMMITTEE" || !canSchedule) {
       return (
         <Card>
           <CardHeader eyebrow="Selection" title="Interview" />
           <CardBody>
-            <p className="text-sm text-ink-faint">Not yet scheduled.</p>
+            <p className="text-sm text-ink-faint">
+              {canSchedule
+                ? "Not yet scheduled."
+                : `No interview was needed — this application was decided at the verification stage (${status.replaceAll("_", " ").toLowerCase()}).`}
+            </p>
           </CardBody>
         </Card>
       );
