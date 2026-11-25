@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import { BackLink } from "@/components/ui/back-link";
 import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Field, Select } from "@/components/ui/input";
@@ -35,6 +36,7 @@ export default async function MenteeDetailPage({ params }: { params: Promise<{ i
 
   return (
     <AppShell role="MENTOR" name={session.user.name ?? "Mentor"} nav={[{ label: "My mentees", href: "/mentor", icon: <Users /> }]}>
+      <BackLink href="/mentor" label="Back to my mentees" />
       <PageHeader
         eyebrow="Mentee"
         title={student.user.name}

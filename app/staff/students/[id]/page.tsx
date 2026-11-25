@@ -6,6 +6,7 @@ import { getPersonTimeline, describePersonTimelineEvent } from "@/lib/person-tim
 import { getStaffNav } from "@/lib/staff-nav";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import { BackLink } from "@/components/ui/back-link";
 import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Select, Field } from "@/components/ui/input";
@@ -51,6 +52,7 @@ export default async function StaffStudentDetailPage({
 
   return (
     <AppShell role="STAFF" name={session.user.name ?? "Staff"} nav={nav}>
+      <BackLink href="/staff" label="Back to dashboard" />
       <PageHeader
         eyebrow="Student"
         title={student.user.name}

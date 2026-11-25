@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { VolunteerShell } from "@/components/volunteer-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import { BackLink } from "@/components/ui/back-link";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Select, TextArea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export default async function VolunteerActivityDetails({
 
   return (
     <VolunteerShell name={session.user.name ?? "Volunteer"}>
+      <BackLink href="/volunteer/activities" label="Back to activities" />
       <PageHeader eyebrow={activity.type.replaceAll("_", " ")} title={activity.name} description={activity.description} action={<StatusBadge value={assignment.status} />} />
       {query.error && <p role="alert" className="mb-4 rounded-md bg-danger-soft p-3 text-sm text-danger">{query.error}</p>}
       {query.submitted && <p role="status" className="mb-4 rounded-md bg-success-soft p-3 text-sm text-success">Your report was submitted for staff review.</p>}

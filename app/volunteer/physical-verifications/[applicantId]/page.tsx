@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { VolunteerShell } from "@/components/volunteer-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import { BackLink } from "@/components/ui/back-link";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Select, TextArea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ export default async function PhysicalVerificationDetails({
 
   return (
     <VolunteerShell name={session.user.name ?? "Volunteer"}>
+      <BackLink href="/volunteer/physical-verifications" label="Back to physical verifications" />
       <PageHeader eyebrow="Physical verification" title={applicant.fullName} description={`Application ${applicant.id.slice(-10).toUpperCase()} · ${applicant.district}`} action={<StatusBadge value={applicant.verification?.decision ?? applicant.status} />} />
       {query.error && <p role="alert" className="mb-4 rounded-md bg-danger-soft p-3 text-sm text-danger">{query.error}</p>}
       {query.saved && <p role="status" className="mb-4 rounded-md bg-success-soft p-3 text-sm text-success">Visit report and evidence saved. Your report is in the history below.</p>}

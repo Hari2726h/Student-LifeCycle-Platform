@@ -12,6 +12,7 @@ import { computeDeservingness, DESERVINGNESS_TIER_TONE, DESERVINGNESS_TIER_LABEL
 import { getStaffNav } from "@/lib/staff-nav";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import { BackLink } from "@/components/ui/back-link";
 import { StatusBadge, Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Field, Select, TextArea } from "@/components/ui/input";
@@ -117,6 +118,7 @@ export default async function ApplicantDetailPage({
 
   return (
     <AppShell role={role} name={session.user.name ?? "Staff"} nav={nav}>
+      <BackLink href="/staff/applicants" label="Back to applicants" />
       <PageHeader
         eyebrow="Applicant"
         title={applicant.fullName}

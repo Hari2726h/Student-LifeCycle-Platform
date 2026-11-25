@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
+import type { Role } from "@prisma/client";
+import { ROLE_HOME, ROLE_PROFILE } from "@/lib/roles";
 import { BrandMark } from "@/components/brand-mark";
 import { NavLink } from "@/components/nav-link";
 import { Avatar } from "@/components/ui/avatar";
@@ -30,15 +32,22 @@ export function SidebarContent({
   nav: NavItem[];
   onNavigate?: () => void;
 }) {
+  const home = ROLE_HOME[role as Role] ?? "/login";
+  const profileHref = ROLE_PROFILE[role as Role];
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2.5 px-4 pt-5 pb-6">
+      <Link
+        href={home}
+        onClick={onNavigate}
+        className="flex items-center gap-2.5 px-4 pt-5 pb-6 transition-opacity hover:opacity-80"
+      >
         <BrandMark className="size-8" />
         <div className="min-w-0">
           <p className="truncate font-display text-[15px] font-medium leading-tight text-ink">Maatram</p>
           <p className="truncate text-[11px] leading-tight text-ink-faint">Student Lifecycle</p>
         </div>
-      </div>
+      </Link>
 
       <nav className="flex-1 space-y-0.5 px-2">
         <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
@@ -63,11 +72,27 @@ export function SidebarContent({
 
       <div className="border-t border-border p-3">
         <div className="flex items-center gap-2.5 rounded-md px-1 py-1.5">
-          <Avatar name={name} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-ink">{name}</p>
-            <p className="truncate text-xs text-ink-faint">{ROLE_LABEL[role] ?? role}</p>
-          </div>
+          {profileHref ? (
+            <Link
+              href={profileHref}
+              onClick={onNavigate}
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md transition-colors hover:bg-surface-sunken"
+            >
+              <Avatar name={name} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-ink">{name}</p>
+                <p className="truncate text-xs text-ink-faint">{ROLE_LABEL[role] ?? role}</p>
+              </div>
+            </Link>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <Avatar name={name} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-ink">{name}</p>
+                <p className="truncate text-xs text-ink-faint">{ROLE_LABEL[role] ?? role}</p>
+              </div>
+            </div>
+          )}
           <ThemeToggle />
         </div>
         <div className="mt-1">
