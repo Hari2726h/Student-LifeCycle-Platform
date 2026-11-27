@@ -27,7 +27,9 @@ every variable the app needs.
 
 ```bash
 npm install
-cp .env.example .env     # defaults work as-is for local dev
+cp .env.example .env     # macOS/Linux — on Windows, use: copy .env.example .env
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# paste that output into .env as AUTH_SECRET="..." (needs 32+ characters)
 npm run db:up             # docker compose: Postgres + S3-compatible storage
 npm run db:migrate         # applies prisma/migrations
 npm run db:seed            # synthetic applicants/students/alumni across every stage
